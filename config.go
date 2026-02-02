@@ -14,7 +14,7 @@ type Config struct {
 }
 
 type ServerConfig struct {
-	Address  string `yaml:"addr"`
+	Address  string `yaml:"address"`
 	Port     string `yaml:"port"`
 	Compress bool   `yaml:"compress"`
 }
