@@ -26,6 +26,12 @@ local:
     - domain: example.com
       ip: 127.0.0.1
 
+forwarder:
+  enable: false
+  rules:
+    - domain: example.com
+      ip: 127.0.0.1:53
+
 cache:
   size: 10000
   min_ttl: 60

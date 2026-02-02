@@ -7,10 +7,11 @@ import (
 )
 
 type Config struct {
-	Server   ServerConfig   `yaml:"server"`
-	Upstream UpstreamConfig `yaml:"upstream"`
-	Local    LocalConfig    `yaml:"local"`
-	Cache    CacheConfig    `yaml:"cache"`
+	Server    ServerConfig    `yaml:"server"`
+	Upstream  UpstreamConfig  `yaml:"upstream"`
+	Local     LocalConfig     `yaml:"local"`
+	Forwarder ForwarderConfig `yaml:"forwarder"`
+	Cache     CacheConfig     `yaml:"cache"`
 }
 
 type ServerConfig struct {
@@ -52,6 +53,16 @@ type StaticRecord struct {
 	IP     string `yaml:"ip"`
 }
 
+type ForwarderConfig struct {
+	Enable bool            `yaml:"enable"`
+	Rules  []ForwarderRule `yaml:"rules"`
+}
+
+type ForwarderRule struct {
+	Domain   string `yaml:"domain"`
+	Upstream string `yaml:"upstream"`
+}
+
 type CacheConfig struct {
 	Size   int `yaml:"size"`
 	MinTTL int `yaml:"min_ttl"`
@@ -82,6 +93,8 @@ func LoadConfig(filename string) (*Config, error) {
 
 	config.Local.Enable = false
 	config.Local.UseHostsFile = false
+
+	config.Forwarder.Enable = false
 
 	config.Cache.Size = 10000
 	config.Cache.MinTTL = 60

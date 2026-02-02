@@ -12,15 +12,17 @@ import (
 )
 
 type LocalResolver struct {
-	records map[string][]net.IP
-	mu      sync.RWMutex
-	minTTL  uint32
+	records         map[string][]net.IP
+	recordWildcards map[string][]net.IP
+	minTTL          uint32
+	mu              sync.RWMutex
 }
 
 func NewLocalResolver(cfg LocalConfig) *LocalResolver {
 	lr := &LocalResolver{
-		records: make(map[string][]net.IP),
-		minTTL:  uint32(config.Cache.MinTTL),
+		records:         make(map[string][]net.IP),
+		recordWildcards: make(map[string][]net.IP),
+		minTTL:          uint32(config.Cache.MinTTL),
 	}
 
 	if !cfg.Enable {
@@ -83,17 +85,43 @@ func (lr *LocalResolver) addRecord(domain string, ipStr string) {
 }
 
 func (lr *LocalResolver) addRecordIP(domain string, ip net.IP) {
+	isWildcard := false
 	domain = dns.Fqdn(domain)
+
+	if strings.HasPrefix(domain, "*.") {
+		domain = domain[2:]
+		isWildcard = true
+	}
 
 	lr.mu.Lock()
 	defer lr.mu.Unlock()
 
-	lr.records[domain] = append(lr.records[domain], ip)
+	if isWildcard {
+		lr.recordWildcards[domain] = append(lr.recordWildcards[domain], ip)
+	} else {
+		lr.records[domain] = append(lr.records[domain], ip)
+	}
 }
 
 func (lr *LocalResolver) Resolve(q dns.Question) *dns.Msg {
 	lr.mu.RLock()
+
 	ips, found := lr.records[q.Name]
+	if !found {
+		var bestMatchLen int = -1
+		for domain, ipsWildcard := range lr.recordWildcards {
+			if strings.HasSuffix(q.Name, "."+domain) || q.Name == domain {
+				// Logic: If this domain is longer than the previous best match, pick this one
+				if len(domain) > bestMatchLen {
+					bestMatchLen = len(domain)
+
+					ips = ipsWildcard
+					found = true
+				}
+			}
+		}
+	}
+
 	lr.mu.RUnlock()
 
 	if !found {
@@ -117,9 +145,7 @@ func (lr *LocalResolver) Resolve(q dns.Question) *dns.Msg {
 				},
 				A: ip,
 			}
-		}
-
-		if ip.To4() == nil && q.Qtype == dns.TypeAAAA {
+		} else if ip.To4() == nil && q.Qtype == dns.TypeAAAA {
 			rr = &dns.AAAA{
 				Hdr: dns.RR_Header{
 					Name:   q.Name,

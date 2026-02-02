@@ -24,12 +24,13 @@ var (
 )
 
 var (
-	tcpPool   *ConnPool
-	bufPool   *sync.Pool
-	udpClient *dns.Client
-	dohClient *http.Client
-	dnsCache  *DNSCache
-	dnsLocal  *LocalResolver
+	tcpPool      *ConnPool
+	bufPool      *sync.Pool
+	udpClient    *dns.Client
+	dohClient    *http.Client
+	dnsLocal     *LocalResolver
+	dnsForwarder *ForwarderResolver
+	dnsCache     *DNSCache
 )
 
 var (
@@ -113,6 +114,11 @@ func main() {
 		log.Printf("Initialized: Local Resolver (Hosts File: %v, Static: %d)", config.Local.UseHostsFile, len(config.Local.StaticRecords))
 	}
 
+	dnsForwarder = NewForwarderResolver(config.Forwarder)
+	if config.Forwarder.Enable {
+		log.Printf("Initialized: Forwarder Resolver (Rules: %d)", len(config.Forwarder.Rules))
+	}
+
 	dnsCache = NewCache(config.Cache.Size, config.Cache.MinTTL, config.Cache.NegTTL)
 	if config.Cache.Size > 0 {
 		log.Printf("Initialized: DNS Cache (Size: %d, Minimum TTL: %ds, Negative TTL: %ds)", config.Cache.Size, config.Cache.MinTTL, config.Cache.NegTTL)
@@ -184,13 +190,23 @@ func handleRequest(w dns.ResponseWriter, r *dns.Msg) {
 		return
 	}
 
-	switch config.Upstream.Mode {
-	case "doh":
-		resp, err = forwardDoH(r, dohURL)
-	case "tcp", "dot":
-		resp, err = forwardTCP(r)
-	case "udp":
-		resp, err = forwardUDP(r, dnsAddreses)
+	forwardFound := false
+	if config.Forwarder.Enable {
+		if target, found := dnsForwarder.GetUpstream(r.Question[0].Name); found {
+			resp, err = forwardUDP(r, []string{target})
+			forwardFound = true
+		}
+	}
+
+	if !forwardFound {
+		switch config.Upstream.Mode {
+		case "doh":
+			resp, err = forwardDoH(r, dohURL)
+		case "tcp", "dot":
+			resp, err = forwardTCP(r)
+		case "udp":
+			resp, err = forwardUDP(r, dnsAddreses)
+		}
 	}
 
 	if err != nil {
