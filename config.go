@@ -59,8 +59,8 @@ type ForwarderConfig struct {
 }
 
 type ForwarderRule struct {
-	Domain   string `yaml:"domain"`
-	Upstream string `yaml:"upstream"`
+	Domain    string   `yaml:"domain"`
+	Upstreams []string `yaml:"upstreams"`
 }
 
 type CacheConfig struct {

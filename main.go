@@ -192,8 +192,8 @@ func handleRequest(w dns.ResponseWriter, r *dns.Msg) {
 
 	forwardFound := false
 	if config.Forwarder.Enable {
-		if target, found := dnsForwarder.GetUpstream(r.Question[0].Name); found {
-			resp, err = forwardUDP(r, []string{target})
+		if targets, found := dnsForwarder.GetUpstream(r.Question[0].Name); found {
+			resp, err = forwardUDP(r, targets)
 			forwardFound = true
 		}
 	}
