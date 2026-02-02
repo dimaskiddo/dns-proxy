@@ -1,0 +1,33 @@
+server:
+  addr: "0.0.0.0"
+  port: "5353"
+  compress: true
+
+upstream:
+  mode: "dot"
+  timeout: 5
+  keep_alive: 60
+  buffer_size: 4096
+  pool_size: 1024
+  skip_tls_verify: true
+  domain: "family.cloudflare-dns.com"
+  addresses:
+    - "1.1.1.3:853"
+    - "1.0.0.3:853"
+  doh:
+    query_path: "/dns-query"
+    idle:
+      max_conn: 100
+      per_host: 20
+
+local:
+  enable: true
+  use_hosts_file: true
+  static_records:
+    - ip: 127.0.0.1
+      domain: example.com
+
+cache:
+  size: 10000
+  min_ttl: 60
+  neg_ttl: 1
