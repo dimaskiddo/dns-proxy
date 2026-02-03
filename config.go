@@ -26,6 +26,7 @@ type UpstreamConfig struct {
 	KeepAlive     int       `yaml:"keep_alive"`
 	BufferSize    int       `yaml:"buffer_size"`
 	PoolSize      int       `yaml:"pool_size"`
+	MaxAttempts   int       `yaml:"max_attempts"`
 	SkipTLSVerify bool      `yaml:"skip_tls_verify"`
 	Domain        string    `yaml:"domain"`
 	Addresses     []string  `yaml:"addresses"`
@@ -85,6 +86,7 @@ func LoadConfig(filename string) (*Config, error) {
 	config.Upstream.KeepAlive = 60
 	config.Upstream.BufferSize = 4096
 	config.Upstream.PoolSize = 100
+	config.Upstream.MaxAttempts = 3
 	config.Upstream.SkipTLSVerify = true
 
 	config.Upstream.DoH.QueryPath = "/dns-query"

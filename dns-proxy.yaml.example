@@ -8,6 +8,7 @@ upstream:
   keep_alive: 60
   buffer_size: 4096
   pool_size: 1024
+  max_attempts: 3
   skip_tls_verify: true
   domain: family.cloudflare-dns.com
   addresses:

@@ -43,6 +43,7 @@ func (p *ConnPool) NewConn() (*dns.Conn, error) {
 	c.Dialer = &net.Dialer{
 		Timeout:   time.Duration(config.Upstream.Timeout) * time.Second,
 		KeepAlive: time.Duration(config.Upstream.KeepAlive) * time.Second,
+		Control:   setSocketOptions,
 	}
 
 	var errLast error
@@ -50,13 +51,7 @@ func (p *ConnPool) NewConn() (*dns.Conn, error) {
 		conn, err := c.Dial(addr)
 		if err == nil {
 			if tcpConn, ok := conn.Conn.(*net.TCPConn); ok {
-				tcpConn.SetNoDelay(true)
-
-				tcpConn.SetKeepAlive(true)
-				tcpConn.SetKeepAlivePeriod(time.Duration(config.Upstream.KeepAlive) * time.Second)
-
-				tcpConn.SetReadBuffer(config.Upstream.BufferSize)
-				tcpConn.SetWriteBuffer(config.Upstream.BufferSize)
+				setTCPOptions(tcpConn)
 			}
 
 			return conn, nil
@@ -68,17 +63,22 @@ func (p *ConnPool) NewConn() (*dns.Conn, error) {
 	return nil, fmt.Errorf("Error Failed to Dial DNS Upstreams: %v", errLast)
 }
 
-func (p *ConnPool) Get() (*dns.Conn, error) {
+func (p *ConnPool) Get() (*dns.Conn, bool, error) {
 	select {
 	case conn := <-p.conns:
-		return conn, nil
+		return conn, true, nil
 	default:
-		return p.NewConn()
+		c, err := p.NewConn()
+		return c, false, err
 	}
 }
 
 func (p *ConnPool) Return(c *dns.Conn) {
 	if c == nil {
+		return
+	}
+
+	if c.Conn == nil {
 		return
 	}
 

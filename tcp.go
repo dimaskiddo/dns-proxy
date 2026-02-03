@@ -3,19 +3,19 @@ package main
 import (
 	"fmt"
 	"io"
-	"net"
 	"time"
 
 	"github.com/miekg/dns"
 )
 
 func forwardTCP(m *dns.Msg) (*dns.Msg, error) {
-	const maxRetries = 3
 	var lastErr error
 
-	// Retry Loop
-	for i := 0; i < maxRetries; i++ {
-		conn, err := tcpPool.Get()
+	attempts := 0
+	maxAttempts := config.Upstream.MaxAttempts
+
+	for attempts < maxAttempts {
+		conn, reused, err := tcpPool.Get()
 		if err != nil {
 			return nil, err
 		}
@@ -29,23 +29,29 @@ func forwardTCP(m *dns.Msg) (*dns.Msg, error) {
 			conn.Close()
 			tcpPool.Return(nil)
 
-			return nil, fmt.Errorf("Error Failed to Write: %w", err)
+			if reused {
+				continue
+			}
+
+			lastErr = fmt.Errorf("Error Failed to Write: %w", err)
+			attempts++
+
+			continue
 		}
 
 		resp, err := conn.ReadMsg()
 		if err != nil {
-			if err == io.EOF || isNetworkError(err) {
-				conn.Close()
-				tcpPool.Return(nil)
-
-				lastErr = fmt.Errorf("Error Failed to Read (Stale Connection): %w", err)
-				continue
-			}
-
 			conn.Close()
 			tcpPool.Return(nil)
 
-			return nil, fmt.Errorf("Error Failed to Read: %w", err)
+			if err == io.EOF || isNetworkError(err) {
+				continue
+			}
+
+			lastErr = fmt.Errorf("Error Failed to Read: %w", err)
+			attempts++
+
+			continue
 		}
 
 		conn.SetWriteDeadline(time.Time{})
@@ -56,13 +62,5 @@ func forwardTCP(m *dns.Msg) (*dns.Msg, error) {
 		return resp, nil
 	}
 
-	return nil, fmt.Errorf("Error DNS Upstream Failed After %d Retries: %v", maxRetries, lastErr)
-}
-
-func isNetworkError(err error) bool {
-	if _, ok := err.(net.Error); ok {
-		return true
-	}
-
-	return false
+	return nil, fmt.Errorf("Error DNS Upstream Failed After %d Attempts: %v", attempts, lastErr)
 }

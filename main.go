@@ -58,23 +58,47 @@ func main() {
 		},
 	}
 
+	udpDialer := &net.Dialer{
+		Timeout:   time.Duration(config.Upstream.Timeout) * time.Second,
+		KeepAlive: time.Duration(config.Upstream.KeepAlive) * time.Second,
+		Control:   setSocketOptions,
+	}
+
 	udpClient = &dns.Client{
 		Net:            "udp",
-		DialTimeout:    time.Duration(config.Upstream.Timeout) * time.Second,
+		Dialer:         udpDialer,
 		Timeout:        time.Duration(config.Upstream.Timeout) * time.Second,
 		SingleInflight: true,
 		UDPSize:        uint16(config.Upstream.BufferSize),
 	}
 
+	dohDialer := &net.Dialer{
+		Timeout:   time.Duration(config.Upstream.Timeout) * time.Second,
+		KeepAlive: time.Duration(config.Upstream.KeepAlive) * time.Second,
+		Control:   setSocketOptions,
+	}
+
 	dohClient = &http.Client{
-		Timeout: time.Duration(config.Upstream.Timeout) * time.Second,
 		Transport: &http.Transport{
-			ForceAttemptHTTP2:   true,
-			MaxIdleConns:        config.Upstream.DoH.Idle.MaxConnection,
-			MaxIdleConnsPerHost: config.Upstream.DoH.Idle.MaxConnectionPerHost,
-			IdleConnTimeout:     time.Duration(config.Upstream.KeepAlive) * time.Second,
-			DisableKeepAlives:   false,
-			DisableCompression:  false,
+			DialContext: func(ctx context.Context, network string, addr string) (net.Conn, error) {
+				conn, err := dohDialer.DialContext(ctx, network, addr)
+				if err != nil {
+					return nil, err
+				}
+
+				if tcpConn, ok := conn.(*net.TCPConn); ok {
+					setTCPOptions(tcpConn)
+				}
+
+				return conn, nil
+			},
+			MaxIdleConns:          config.Upstream.DoH.Idle.MaxConnection,
+			MaxIdleConnsPerHost:   config.Upstream.DoH.Idle.MaxConnectionPerHost,
+			IdleConnTimeout:       time.Duration(config.Upstream.KeepAlive) * time.Second,
+			ResponseHeaderTimeout: time.Duration(config.Upstream.Timeout) * time.Second,
+			ForceAttemptHTTP2:     true,
+			DisableKeepAlives:     false,
+			DisableCompression:    false,
 			TLSClientConfig: &tls.Config{
 				InsecureSkipVerify: config.Upstream.SkipTLSVerify,
 			},
