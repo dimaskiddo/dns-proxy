@@ -48,6 +48,10 @@ func init() {
 	if err != nil {
 		log.Fatalf("Error Failed to Load Configuration: %v", err)
 	}
+
+	if len(config.Server.Listen) == 0 {
+		log.Fatal("Error No Listen Addresses Configured")
+	}
 }
 
 func main() {
@@ -150,10 +154,12 @@ func main() {
 
 	dns.HandleFunc(".", handleRequest)
 
-	go startListener("udp", fmt.Sprintf("%s:%s", config.Server.Address, config.Server.Port))
-	go startListener("tcp", fmt.Sprintf("%s:%s", config.Server.Address, config.Server.Port))
+	for _, addr := range config.Server.Listen {
+		go startListener("udp", addr)
+		go startListener("tcp", addr)
 
-	log.Printf("DNS Proxy Listening on %s:%s -> %v [%s]", config.Server.Address, config.Server.Port, dnsAddreses, strings.ToUpper(config.Upstream.Mode))
+		log.Printf("DNS Proxy Listening on %s -> %v [%s]", addr, dnsAddreses, strings.ToUpper(config.Upstream.Mode))
+	}
 
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)

@@ -15,9 +15,8 @@ type Config struct {
 }
 
 type ServerConfig struct {
-	Address  string `yaml:"address"`
-	Port     string `yaml:"port"`
-	Compress bool   `yaml:"compress"`
+	Listen   []string `yaml:"listen"`
+	Compress bool     `yaml:"compress"`
 }
 
 type UpstreamConfig struct {
@@ -77,8 +76,7 @@ func LoadConfig(filename string) (*Config, error) {
 	}
 
 	config := &Config{}
-	config.Server.Address = "0.0.0.0"
-	config.Server.Port = "5353"
+	config.Server.Listen = []string{"0.0.0.0:5353"}
 	config.Server.Compress = true
 
 	config.Upstream.Mode = "udp"

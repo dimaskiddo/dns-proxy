@@ -1,8 +1,11 @@
 server:
-  address: 0.0.0.0
-  port: 5353
+  listen:
+    - 0.0.0.0:5353
+  compress: true
 
 upstream:
+  # Available Values for Mode
+  # udp, tcp, dot, doh
   mode: dot
   timeout: 5
   keep_alive: 60
@@ -22,7 +25,7 @@ upstream:
 
 local:
   enable: true
-  use_hosts_file: true
+  use_hosts_file: false
   static_records:
     - domain: example.com
       ip: 127.0.0.1
