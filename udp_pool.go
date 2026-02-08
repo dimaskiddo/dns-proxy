@@ -30,6 +30,10 @@ func (p *UDPPool) NewConn() (*dns.Conn, error) {
 	for _, addr := range p.addresses {
 		conn, err := p.Dial(addr)
 		if err == nil {
+			if tcpConn, ok := conn.Conn.(*net.TCPConn); ok {
+				setTCPOptions(tcpConn)
+			}
+
 			return conn, nil
 		}
 
