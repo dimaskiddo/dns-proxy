@@ -12,15 +12,13 @@ type UDPPool struct {
 	conns     chan *dns.Conn
 	addresses []string
 	capacity  int
-	timeout   time.Duration
 }
 
-func NewUDPPool(size int, addrs []string, timeout int) *UDPPool {
+func NewUDPPool(size int, addrs []string) *UDPPool {
 	return &UDPPool{
 		conns:     make(chan *dns.Conn, size),
 		addresses: addrs,
 		capacity:  size,
-		timeout:   time.Duration(timeout) * time.Second,
 	}
 }
 

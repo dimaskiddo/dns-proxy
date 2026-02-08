@@ -120,7 +120,7 @@ func main() {
 		log.Fatal("Error No Valid Remote Addresses Provided")
 	}
 
-	udpPool = NewUDPPool(config.Upstream.PoolSize, dnsAddreses, config.Upstream.Timeout)
+	udpPool = NewUDPPool(config.Upstream.PoolSize, dnsAddreses)
 	log.Printf("Initialized: Connection UDP Pool (Size: %d)", config.Upstream.PoolSize)
 
 	if config.Upstream.Mode == "tcp" || config.Upstream.Mode == "dot" {
