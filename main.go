@@ -24,7 +24,8 @@ var (
 )
 
 var (
-	tcpPool      *ConnPool
+	tcpPool      *TCPPool
+	udpPool      *UDPPool
 	bufPool      *sync.Pool
 	udpClient    *dns.Client
 	dohClient    *http.Client
@@ -62,16 +63,8 @@ func main() {
 		},
 	}
 
-	udpDialer := &net.Dialer{
-		Timeout:   time.Duration(config.Upstream.Timeout) * time.Second,
-		KeepAlive: time.Duration(config.Upstream.KeepAlive) * time.Second,
-		Control:   setSocketOptions,
-	}
-
 	udpClient = &dns.Client{
 		Net:            "udp",
-		Dialer:         udpDialer,
-		Timeout:        time.Duration(config.Upstream.Timeout) * time.Second,
 		SingleInflight: true,
 		UDPSize:        uint16(config.Upstream.BufferSize),
 	}
@@ -127,14 +120,17 @@ func main() {
 		log.Fatal("Error No Valid Remote Addresses Provided")
 	}
 
+	udpPool = NewUDPPool(config.Upstream.PoolSize, dnsAddreses, config.Upstream.Timeout)
+	log.Printf("Initialized: Connection UDP Pool (Size: %d)", config.Upstream.PoolSize)
+
 	if config.Upstream.Mode == "tcp" || config.Upstream.Mode == "dot" {
 		hostSNI := config.Upstream.Domain
 		if hostSNI == "" && len(dnsAddreses) > 0 {
 			hostSNI = dnsAddreses[0]
 		}
 
-		tcpPool = NewPool(config.Upstream.PoolSize, dnsAddreses, hostSNI, config.Upstream.Mode)
-		log.Printf("Initialized: Connection Pool (Size: %d)", config.Upstream.PoolSize)
+		tcpPool = NewTCPPool(config.Upstream.PoolSize, dnsAddreses, hostSNI, config.Upstream.Mode)
+		log.Printf("Initialized: Connection TCP Pool (Size: %d)", config.Upstream.PoolSize)
 	}
 
 	dnsLocal = NewLocalResolver(config.Local)
@@ -235,7 +231,7 @@ func handleRequest(w dns.ResponseWriter, r *dns.Msg) {
 		case "tcp", "dot":
 			resp, err = forwardTCP(r)
 		case "udp":
-			resp, err = forwardUDP(r, dnsAddreses)
+			resp, err = forwardUDP(r, nil)
 		}
 	}
 

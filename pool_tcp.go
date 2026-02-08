@@ -9,7 +9,7 @@ import (
 	"github.com/miekg/dns"
 )
 
-type ConnPool struct {
+type TCPPool struct {
 	conns     chan *dns.Conn
 	addresses []string
 	host      string
@@ -17,8 +17,8 @@ type ConnPool struct {
 	capacity  int
 }
 
-func NewPool(size int, addrs []string, host string, mode string) *ConnPool {
-	return &ConnPool{
+func NewTCPPool(size int, addrs []string, host string, mode string) *TCPPool {
+	return &TCPPool{
 		conns:     make(chan *dns.Conn, size),
 		addresses: addrs,
 		host:      host,
@@ -27,7 +27,7 @@ func NewPool(size int, addrs []string, host string, mode string) *ConnPool {
 	}
 }
 
-func (p *ConnPool) NewConn() (*dns.Conn, error) {
+func (p *TCPPool) NewConn() (*dns.Conn, error) {
 	c := new(dns.Client)
 
 	c.Net = "tcp"
@@ -46,7 +46,7 @@ func (p *ConnPool) NewConn() (*dns.Conn, error) {
 		Control:   setSocketOptions,
 	}
 
-	var errLast error
+	var lastErr error
 	for _, addr := range p.addresses {
 		conn, err := c.Dial(addr)
 		if err == nil {
@@ -57,23 +57,24 @@ func (p *ConnPool) NewConn() (*dns.Conn, error) {
 			return conn, nil
 		}
 
-		errLast = err
+		lastErr = err
 	}
 
-	return nil, fmt.Errorf("Error Failed to Dial DNS Upstreams: %v", errLast)
+	return nil, fmt.Errorf("Error Failed to Dial DNS Upstreams: %v", lastErr)
 }
 
-func (p *ConnPool) Get() (*dns.Conn, bool, error) {
+func (p *TCPPool) Get() (*dns.Conn, bool, error) {
 	select {
 	case conn := <-p.conns:
 		return conn, true, nil
+
 	default:
 		c, err := p.NewConn()
 		return c, false, err
 	}
 }
 
-func (p *ConnPool) Return(c *dns.Conn) {
+func (p *TCPPool) Return(c *dns.Conn) {
 	if c == nil {
 		return
 	}

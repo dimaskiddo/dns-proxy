@@ -9,18 +9,26 @@ import (
 )
 
 func forwardTCP(m *dns.Msg) (*dns.Msg, error) {
+	var conn *dns.Conn
+	var reused bool
+
+	var err error
 	var lastErr error
 
 	attempts := 0
 	maxAttempts := config.Upstream.MaxAttempts
 
+	if maxAttempts < 1 {
+		maxAttempts = 1
+	}
+
 	for attempts < maxAttempts {
-		conn, reused, err := tcpPool.Get()
+		ctxTimeout := time.Now().Add(time.Duration(config.Upstream.Timeout) * time.Second)
+
+		conn, reused, err = tcpPool.Get()
 		if err != nil {
 			return nil, err
 		}
-
-		ctxTimeout := time.Now().Add(time.Duration(config.Upstream.Timeout) * time.Second)
 
 		conn.SetWriteDeadline(ctxTimeout)
 		conn.SetReadDeadline(ctxTimeout)
@@ -44,7 +52,7 @@ func forwardTCP(m *dns.Msg) (*dns.Msg, error) {
 			conn.Close()
 			tcpPool.Return(nil)
 
-			if err == io.EOF || isNetworkError(err) {
+			if reused && (err == io.EOF || isNetworkError(err)) {
 				continue
 			}
 
