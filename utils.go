@@ -2,6 +2,7 @@ package main
 
 import (
 	"net"
+	"path/filepath"
 	"time"
 )
 
@@ -21,4 +22,30 @@ func isNetworkError(err error) bool {
 	}
 
 	return false
+}
+
+func parseIncludeFiles(baseDir string, patterns []string) []string {
+	var files []string
+
+	seen := make(map[string]bool)
+
+	for _, pattern := range patterns {
+		if !filepath.IsAbs(pattern) {
+			pattern = filepath.Join(baseDir, pattern)
+		}
+
+		matches, err := filepath.Glob(pattern)
+		if err != nil {
+			continue
+		}
+
+		for _, match := range matches {
+			if !seen[match] {
+				files = append(files, match)
+				seen[match] = true
+			}
+		}
+	}
+
+	return files
 }

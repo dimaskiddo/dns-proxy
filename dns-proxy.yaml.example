@@ -4,8 +4,8 @@ server:
   compress: true
 
 upstream:
-  # Available Values for Mode
-  # udp, tcp, dot, doh
+  ## Available Values for Mode
+  ## udp, tcp, dot, doh
   mode: dot
   timeout: 5
   keep_alive: 60
@@ -26,12 +26,18 @@ upstream:
 local:
   enable: true
   use_hosts_file: false
+  ## Can use include_files for more managed configuration
+  # include_files:
+  #   - conf.d/local-*.yaml
   static_records:
     - domain: example.com
       ip: 127.0.0.1
 
 forwarder:
   enable: false
+  ## Can use include_files for more managed configuration
+  # include_files:
+  #   - conf.d/forwarder-*.yaml
   rules:
     - domain: example.com
       upstreams:

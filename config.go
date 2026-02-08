@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"path/filepath"
 
 	"gopkg.in/yaml.v3"
 )
@@ -45,6 +46,7 @@ type IdleConfig struct {
 type LocalConfig struct {
 	Enable        bool           `yaml:"enable"`
 	UseHostsFile  bool           `yaml:"use_hosts_file"`
+	IncludeFiles  []string       `yaml:"include_files"`
 	StaticRecords []StaticRecord `yaml:"static_records"`
 }
 
@@ -54,8 +56,9 @@ type StaticRecord struct {
 }
 
 type ForwarderConfig struct {
-	Enable bool            `yaml:"enable"`
-	Rules  []ForwarderRule `yaml:"rules"`
+	Enable       bool            `yaml:"enable"`
+	IncludeFiles []string        `yaml:"include_files"`
+	Rules        []ForwarderRule `yaml:"rules"`
 }
 
 type ForwarderRule struct {
@@ -74,6 +77,8 @@ func LoadConfig(filename string) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	configDir := filepath.Dir(filename)
 
 	config := &Config{}
 	config.Server.Listen = []string{"0.0.0.0:5353"}
@@ -103,6 +108,36 @@ func LoadConfig(filename string) (*Config, error) {
 	err = yaml.Unmarshal(data, config)
 	if err != nil {
 		return nil, err
+	}
+
+	localFiles := parseIncludeFiles(configDir, config.Local.IncludeFiles)
+	for _, file := range localFiles {
+		subData, err := os.ReadFile(file)
+		if err != nil {
+			continue
+		}
+
+		var tempLocal LocalConfig
+		if err := yaml.Unmarshal(subData, &tempLocal); err == nil {
+			if len(tempLocal.StaticRecords) > 0 {
+				config.Local.StaticRecords = append(config.Local.StaticRecords, tempLocal.StaticRecords...)
+			}
+		}
+	}
+
+	forwarderFiles := parseIncludeFiles(configDir, config.Forwarder.IncludeFiles)
+	for _, file := range forwarderFiles {
+		subData, err := os.ReadFile(file)
+		if err != nil {
+			continue
+		}
+
+		var tempForwarder ForwarderConfig
+		if err := yaml.Unmarshal(subData, &tempForwarder); err == nil {
+			if len(tempForwarder.Rules) > 0 {
+				config.Forwarder.Rules = append(config.Forwarder.Rules, tempForwarder.Rules...)
+			}
+		}
 	}
 
 	return config, nil
