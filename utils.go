@@ -6,6 +6,18 @@ import (
 	"time"
 )
 
+func nextPowerOfTwo(v int) int {
+	v--
+	v |= v >> 1
+	v |= v >> 2
+	v |= v >> 4
+	v |= v >> 8
+	v |= v >> 16
+	v++
+
+	return v
+}
+
 func setTCPOptions(conn *net.TCPConn) {
 	conn.SetNoDelay(true)
 

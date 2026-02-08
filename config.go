@@ -68,6 +68,7 @@ type ForwarderRule struct {
 
 type CacheConfig struct {
 	Size   int `yaml:"size"`
+	Shards int `yaml:"shards"`
 	MinTTL int `yaml:"min_ttl"`
 	NegTTL int `yaml:"neg_ttl"`
 }
@@ -102,6 +103,7 @@ func LoadConfig(filename string) (*Config, error) {
 	config.Forwarder.Enable = false
 
 	config.Cache.Size = 10000
+	config.Cache.Shards = 256
 	config.Cache.MinTTL = 60
 	config.Cache.NegTTL = 1
 

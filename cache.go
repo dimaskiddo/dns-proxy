@@ -1,7 +1,7 @@
 package main
 
 import (
-	"fmt"
+	"hash/fnv"
 	"sync"
 	"time"
 
@@ -13,24 +13,51 @@ type CacheEntry struct {
 	Expires time.Time
 }
 
+type CacheShard struct {
+	store    map[string]CacheEntry
+	mu       sync.RWMutex
+	capacity int
+}
+
 type DNSCache struct {
-	store      map[string]CacheEntry
-	mu         sync.RWMutex
-	capacity   int
 	enabled    bool
+	shards     []*CacheShard
+	shardCount uint64
+	shardMask  uint64
 	defaultTTL time.Duration
 	minTTL     time.Duration
 	negTTL     time.Duration
 }
 
-func NewCache(size int, minTTL, negTTL int) *DNSCache {
+func NewCache(size int, shards int, minTTL int, negTTL int) *DNSCache {
+	if shards < 1 {
+		shards = 256
+	}
+
+	shardsCount := nextPowerOfTwo(shards)
+
 	c := &DNSCache{
-		store:      make(map[string]CacheEntry, size),
-		capacity:   size,
 		enabled:    size > 0,
+		shards:     make([]*CacheShard, shardsCount),
+		shardCount: uint64(shardsCount),
+		shardMask:  uint64(shardsCount - 1),
 		defaultTTL: 60 * time.Second,
 		minTTL:     time.Duration(minTTL) * time.Second,
 		negTTL:     time.Duration(negTTL) * time.Second,
+	}
+
+	// Count Cache Capacity Per-Shard
+	shardCapacity := size / shardsCount
+	if shardCapacity < 1 {
+		shardCapacity = 1
+	}
+
+	// Initialize Cache Shard with Calculated Capacity
+	for i := 0; i < shardsCount; i++ {
+		c.shards[i] = &CacheShard{
+			store:    make(map[string]CacheEntry, shardCapacity),
+			capacity: shardCapacity,
+		}
 	}
 
 	if c.enabled {
@@ -41,7 +68,14 @@ func NewCache(size int, minTTL, negTTL int) *DNSCache {
 }
 
 func key(q dns.Question) string {
-	return fmt.Sprintf("%s:%d:%d", q.Name, q.Qtype, q.Qclass)
+	return q.Name + string(rune(q.Qtype)) + string(rune(q.Qclass))
+}
+
+func (c *DNSCache) getShard(key string) *CacheShard {
+	h := fnv.New64a()
+	h.Write([]byte(key))
+
+	return c.shards[h.Sum64()&c.shardMask]
 }
 
 func (c *DNSCache) Get(r *dns.Msg) *dns.Msg {
@@ -50,10 +84,11 @@ func (c *DNSCache) Get(r *dns.Msg) *dns.Msg {
 	}
 
 	k := key(r.Question[0])
+	shard := c.getShard(k)
 
-	c.mu.RLock()
-	entry, found := c.store[k]
-	c.mu.RUnlock()
+	shard.mu.RLock()
+	entry, found := shard.store[k]
+	shard.mu.RUnlock()
 
 	if !found {
 		return nil
@@ -100,17 +135,20 @@ func (c *DNSCache) Set(r *dns.Msg) {
 		Expires: time.Now().Add(ttl),
 	}
 
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	shard := c.getShard(k)
 
-	if len(c.store) >= c.capacity {
-		for k := range c.store {
-			delete(c.store, k)
+	shard.mu.Lock()
+	defer shard.mu.Unlock()
+
+	if len(shard.store) >= shard.capacity {
+		// Random Eviction Strategy
+		for k := range shard.store {
+			delete(shard.store, k)
 			break
 		}
 	}
 
-	c.store[k] = entry
+	shard.store[k] = entry
 }
 
 func (c *DNSCache) cleanupRoutine() {
@@ -118,15 +156,21 @@ func (c *DNSCache) cleanupRoutine() {
 	defer ticker.Stop()
 
 	for range ticker.C {
-		c.mu.Lock()
-
 		now := time.Now()
-		for k, v := range c.store {
-			if now.After(v.Expires) {
-				delete(c.store, k)
-			}
-		}
 
-		c.mu.Unlock()
+		// Loop Through Shard
+		for i := 0; i < int(c.shardCount); i++ {
+			shard := c.shards[i]
+
+			shard.mu.Lock()
+			// Loop Through Capacity in Shard
+			for k, v := range shard.store {
+				if now.After(v.Expires) {
+					// Delete Expired Cache
+					delete(shard.store, k)
+				}
+			}
+			shard.mu.Unlock()
+		}
 	}
 }

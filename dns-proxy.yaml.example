@@ -23,6 +23,12 @@ upstream:
       max_conn: 100
       per_host: 20
 
+cache:
+  size: 10000
+  shards: 256
+  min_ttl: 60
+  neg_ttl: 1
+
 local:
   enable: true
   use_hosts_file: false
@@ -42,8 +48,3 @@ forwarder:
     - domain: example.com
       upstreams:
         - 127.0.0.1:53
-
-cache:
-  size: 10000
-  min_ttl: 60
-  neg_ttl: 1

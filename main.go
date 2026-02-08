@@ -147,9 +147,9 @@ func main() {
 		log.Printf("Initialized: Forwarder Resolver (Rules: %d)", len(config.Forwarder.Rules))
 	}
 
-	dnsCache = NewCache(config.Cache.Size, config.Cache.MinTTL, config.Cache.NegTTL)
+	dnsCache = NewCache(config.Cache.Size, config.Cache.Shards, config.Cache.MinTTL, config.Cache.NegTTL)
 	if config.Cache.Size > 0 {
-		log.Printf("Initialized: DNS Cache (Size: %d, Minimum TTL: %ds, Negative TTL: %ds)", config.Cache.Size, config.Cache.MinTTL, config.Cache.NegTTL)
+		log.Printf("Initialized: DNS Cache (Size: %d, Shards: %d, Minimum TTL: %ds, Negative TTL: %ds)", config.Cache.Size, config.Cache.Shards, config.Cache.MinTTL, config.Cache.NegTTL)
 	}
 
 	dns.HandleFunc(".", handleRequest)
