@@ -1,6 +1,7 @@
 package main
 
 import (
+	"container/list"
 	"hash/fnv"
 	"sync"
 	"time"
@@ -8,13 +9,15 @@ import (
 	"github.com/miekg/dns"
 )
 
-type CacheEntry struct {
+type CacheItem struct {
+	Key     string
 	Msg     *dns.Msg
 	Expires time.Time
 }
 
 type CacheShard struct {
-	store    map[string]CacheEntry
+	store    map[string]*list.Element
+	ll       *list.List
 	mu       sync.RWMutex
 	capacity int
 }
@@ -57,7 +60,8 @@ func NewCache(size int, shards int, minTTL int, negTTL int) *DNSCache {
 	// Initialize Cache Shard with Calculated Capacity
 	for i := 0; i < shardsCount; i++ {
 		c.shards[i] = &CacheShard{
-			store:    make(map[string]CacheEntry, shardCapacity),
+			store:    make(map[string]*list.Element, shardCapacity),
+			ll:       list.New(),
 			capacity: shardCapacity,
 		}
 	}
@@ -88,19 +92,25 @@ func (c *DNSCache) Get(r *dns.Msg) *dns.Msg {
 	k := key(r.Question[0])
 	shard := c.getShard(k)
 
-	shard.mu.RLock()
-	entry, found := shard.store[k]
-	shard.mu.RUnlock()
+	shard.mu.Lock()
+	defer shard.mu.Unlock()
 
+	elem, found := shard.store[k]
 	if !found {
 		return nil
 	}
 
-	if time.Now().After(entry.Expires) {
+	item := elem.Value.(*CacheItem)
+	if time.Now().After(item.Expires) {
+		shard.ll.Remove(elem)
+		delete(shard.store, k)
+
 		return nil
 	}
 
-	return entry.Msg.Copy()
+	shard.ll.MoveToFront(elem)
+
+	return item.Msg.Copy()
 }
 
 func (c *DNSCache) Set(r *dns.Msg) {
@@ -132,7 +142,8 @@ func (c *DNSCache) Set(r *dns.Msg) {
 	}
 
 	k := key(r.Question[0])
-	entry := CacheEntry{
+	newItem := &CacheItem{
+		Key:     k,
 		Msg:     r.Copy(),
 		Expires: time.Now().Add(ttl),
 	}
@@ -142,15 +153,27 @@ func (c *DNSCache) Set(r *dns.Msg) {
 	shard.mu.Lock()
 	defer shard.mu.Unlock()
 
-	if len(shard.store) >= shard.capacity {
-		// Random Eviction Strategy
-		for k := range shard.store {
-			delete(shard.store, k)
-			break
+	// Check if Cache Item Already Exist
+	// If Exist Update it in Linked List
+	if elem, found := shard.store[k]; found {
+		elem.Value = newItem
+		shard.ll.MoveToFront(elem)
+		return
+	}
+
+	// If Shard Capacity is Reached Then
+	// Remove the Back (Least Recently Used (LRU))
+	if shard.ll.Len() >= shard.capacity {
+		oldest := shard.ll.Back()
+		if oldest != nil {
+			shard.ll.Remove(oldest)
+			delete(shard.store, oldest.Value.(*CacheItem).Key)
 		}
 	}
 
-	shard.store[k] = entry
+	// Add Cache Item in to Linked List
+	elem := shard.ll.PushFront(newItem)
+	shard.store[k] = elem
 }
 
 func (c *DNSCache) cleanupRoutine() {
@@ -162,18 +185,24 @@ func (c *DNSCache) cleanupRoutine() {
 		case <-ticker.C:
 			now := time.Now()
 
-			// Loop Through Shard
+			// Loop Through Shards
 			for i := 0; i < int(c.shardCount); i++ {
 				shard := c.shards[i]
 
-				// Loop Through Capacity in Shard
 				shard.mu.Lock()
-				for k, v := range shard.store {
-					if now.After(v.Expires) {
-						// Delete Expired Cache
-						delete(shard.store, k)
+
+				// Loop Through Linked List in Shard
+				var next *list.Element
+				for e := shard.ll.Front(); e != nil; e = next {
+					next = e.Next()
+					item := e.Value.(*CacheItem)
+
+					if now.After(item.Expires) {
+						shard.ll.Remove(e)
+						delete(shard.store, item.Key)
 					}
 				}
+
 				shard.mu.Unlock()
 			}
 
