@@ -114,7 +114,7 @@ func LoadConfig(filename string) (*Config, error) {
 	config.Cache.MinTTL = 60
 	config.Cache.NegTTL = 1
 
-	config.EDNS.Enable = true
+	config.EDNS.Enable = false
 	config.EDNS.IPv4Mask = 24
 	config.EDNS.IPv6Mask = 56
 

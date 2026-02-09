@@ -30,7 +30,7 @@ cache:
   neg_ttl: 1
 
 edns:
-  enable: true
+  enable: false
   ipv4_mask: 24
   ipv6_mask: 56
 
