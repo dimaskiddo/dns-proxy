@@ -29,7 +29,7 @@ func NewLocalResolver(cfg LocalConfig, minTTL int) *LocalResolver {
 		return lr
 	}
 
-	if config.Local.UseHostsFile {
+	if cfg.UseHostsFile {
 		path := "/etc/hosts"
 		if runtime.GOOS == "windows" {
 			path = "C:\\Windows\\System32\\drivers\\etc\\hosts"
