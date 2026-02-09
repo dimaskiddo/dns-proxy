@@ -29,6 +29,11 @@ cache:
   min_ttl: 60
   neg_ttl: 1
 
+edns:
+  enable: true
+  ipv4_mask: 24
+  ipv6_mask: 56
+
 local:
   enable: true
   use_hosts_file: false

@@ -33,6 +33,7 @@ var (
 	dnsLocal     *LocalResolver
 	dnsForwarder *ForwarderResolver
 	dnsCache     *DNSCache
+	dnsEDNS      *EDNSHandler
 )
 
 var (
@@ -151,6 +152,11 @@ func parseConfig() error {
 		log.Printf("Initialized: DNS Cache (Size: %d, Shards: %d, Minimum TTL: %ds, Negative TTL: %ds)", newConfig.Cache.Size, newConfig.Cache.Shards, newConfig.Cache.MinTTL, newConfig.Cache.NegTTL)
 	}
 
+	newDNSEDNS := NewEDNSHandler(newConfig.EDNS)
+	if newConfig.EDNS.Enable {
+		log.Printf("Initialized: EDNS0 Client Subnet (IPv4 Mask: /%d, IPv6 Mask: /%d)", newConfig.EDNS.IPv4Mask, newConfig.EDNS.IPv6Mask)
+	}
+
 	configLock.Lock()
 	defer configLock.Unlock()
 
@@ -173,6 +179,7 @@ func parseConfig() error {
 	dnsLocal = newDNSLocal
 	dnsForwarder = newDNSForwarder
 	dnsCache = newDNSCache
+	dnsEDNS = newDNSEDNS
 
 	return nil
 }
@@ -264,6 +271,10 @@ func handleRequest(w dns.ResponseWriter, r *dns.Msg) {
 
 		w.WriteMsg(cachedResp)
 		return
+	}
+
+	if dnsEDNS != nil {
+		dnsEDNS.AddECS(r, w.RemoteAddr().String())
 	}
 
 	forwardFound := false

@@ -13,6 +13,7 @@ type Config struct {
 	Local     LocalConfig     `yaml:"local"`
 	Forwarder ForwarderConfig `yaml:"forwarder"`
 	Cache     CacheConfig     `yaml:"cache"`
+	EDNS      EDNSConfig      `yaml:"edns"`
 }
 
 type ServerConfig struct {
@@ -73,6 +74,12 @@ type CacheConfig struct {
 	NegTTL int `yaml:"neg_ttl"`
 }
 
+type EDNSConfig struct {
+	Enable   bool `yaml:"enable"`
+	IPv4Mask int  `yaml:"ipv4_mask"`
+	IPv6Mask int  `yaml:"ipv6_mask"`
+}
+
 func LoadConfig(filename string) (*Config, error) {
 	data, err := os.ReadFile(filename)
 	if err != nil {
@@ -106,6 +113,10 @@ func LoadConfig(filename string) (*Config, error) {
 	config.Cache.Shards = 256
 	config.Cache.MinTTL = 60
 	config.Cache.NegTTL = 1
+
+	config.EDNS.Enable = true
+	config.EDNS.IPv4Mask = 24
+	config.EDNS.IPv6Mask = 56
 
 	err = yaml.Unmarshal(data, config)
 	if err != nil {
