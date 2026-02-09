@@ -3,6 +3,9 @@ SERVICE_NAME       := dns-proxy
 REBASE_URL         := "github.com/dimaskiddo/dns-proxy"
 COMMIT_MSG         := "update improvement"
 
+VERSION 					 := $(shell git describe --tags --always 2>/dev/null | sed -e 's|^v||g' || echo "dev")
+COMMIT						 := $(shell git rev-parse --short HEAD 2>/dev/null || echo "none")
+
 .PHONY:
 
 .SILENT:
@@ -22,7 +25,7 @@ vendor:
 release:
 	make vendor
 	make clean-dist
-	goreleaser release --parallelism 1 --snapshot --skip-publish --rm-dist
+	goreleaser release --parallelism 1 --rm-dist --snapshot --skip-publish
 	echo "Release '$(SERVICE_NAME)' complete, please check dist directory."
 
 publish:
@@ -33,8 +36,12 @@ publish:
 
 build:
 	make vendor
-	CGO_ENABLED=$(BUILD_CGO_ENABLED) go build -ldflags="-s -w" -trimpath -a -o $(SERVICE_NAME) .
+	CGO_ENABLED=$(BUILD_CGO_ENABLED) go build -ldflags="-s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT)" -trimpath -a -o $(SERVICE_NAME) .
 	echo "Build '$(SERVICE_NAME)' complete."
+
+docker-build:
+	docker build --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) -t dimaskiddo/dns-proxy:v$(VERSION) .
+	echo "Docker Build '$(SERVICE_NAME)' complete."
 
 run:
 	make vendor

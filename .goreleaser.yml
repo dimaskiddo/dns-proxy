@@ -8,6 +8,8 @@ builds:
   ldflags:
     - -s
     - -w
+    - -X main.version={{.Version}}
+    - -X main.commit={{.ShortCommit}}    
   flags:
     - -trimpath
     - -a
@@ -35,7 +37,7 @@ archives:
 checksum:
   name_template: 'checksums.txt'
 snapshot:
-  name_template: "{{ .Version }}_{{ .ShortCommit }}"
+  name_template: "{{ .Version }}"
 changelog:
   filters:
     exclude:

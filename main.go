@@ -19,6 +19,11 @@ import (
 )
 
 var (
+	version = "dev"
+	commit  = "none"
+)
+
+var (
 	config     *Config
 	configLock sync.RWMutex
 	configFile string
@@ -42,8 +47,20 @@ var (
 )
 
 func init() {
+	var showVersion bool
+
 	flag.StringVar(&configFile, "config", "./dns-proxy.yaml", "Path to YAML configuration file")
+	flag.BoolVar(&showVersion, "version", false, "Show DNS-Proxy version")
 	flag.Parse()
+
+	if showVersion {
+		fmt.Println("DNS-Proxy")
+		fmt.Println("Created by Dimas Restu H <drh.dimasrestu@gmail.com>")
+		fmt.Println("---------------------------------------------------")
+		fmt.Println("Version : " + version)
+		fmt.Println("Commit  : " + commit)
+		os.Exit(0)
+	}
 }
 
 func parseConfig() error {
