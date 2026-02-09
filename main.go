@@ -20,6 +20,7 @@ import (
 
 var (
 	config     *Config
+	configLock sync.RWMutex
 	configFile string
 )
 
@@ -36,49 +37,49 @@ var (
 
 var (
 	dnsAddreses []string
-	dohURL      []string
+	dohURLs     []string
 )
 
 func init() {
-	var err error
-
 	flag.StringVar(&configFile, "config", "./dns-proxy.yaml", "Path to YAML configuration file")
 	flag.Parse()
+}
 
-	config, err = LoadConfig(configFile)
+func parseConfig() error {
+	var err error
+
+	newConfig, err := LoadConfig(configFile)
 	if err != nil {
 		log.Fatalf("Error Failed to Load Configuration: %v", err)
 	}
 
-	if len(config.Server.Listen) == 0 {
+	if len(newConfig.Server.Listen) == 0 {
 		log.Fatal("Error No Listen Addresses Configured")
 	}
-}
 
-func main() {
-	bufPool = &sync.Pool{
+	newBufPool := &sync.Pool{
 		New: func() interface{} {
-			b := make([]byte, config.Upstream.BufferSize+1024)
+			b := make([]byte, newConfig.Upstream.BufferSize+1024)
 			return &b
 		},
 	}
 
-	udpClient = &dns.Client{
+	newUDPClient := &dns.Client{
 		Net:            "udp",
 		SingleInflight: true,
-		UDPSize:        uint16(config.Upstream.BufferSize),
+		UDPSize:        uint16(newConfig.Upstream.BufferSize),
 	}
 
-	dohDialer := &net.Dialer{
-		Timeout:   time.Duration(config.Upstream.Timeout) * time.Second,
-		KeepAlive: time.Duration(config.Upstream.KeepAlive) * time.Second,
+	newDOHDialer := &net.Dialer{
+		Timeout:   time.Duration(newConfig.Upstream.Timeout) * time.Second,
+		KeepAlive: time.Duration(newConfig.Upstream.KeepAlive) * time.Second,
 		Control:   setSocketOptions,
 	}
 
-	dohClient = &http.Client{
+	newDOHClient := &http.Client{
 		Transport: &http.Transport{
 			DialContext: func(ctx context.Context, network string, addr string) (net.Conn, error) {
-				conn, err := dohDialer.DialContext(ctx, network, addr)
+				conn, err := newDOHDialer.DialContext(ctx, network, addr)
 				if err != nil {
 					return nil, err
 				}
@@ -89,63 +90,96 @@ func main() {
 
 				return conn, nil
 			},
-			MaxIdleConns:          config.Upstream.DoH.Idle.MaxConnection,
-			MaxIdleConnsPerHost:   config.Upstream.DoH.Idle.MaxConnectionPerHost,
-			IdleConnTimeout:       time.Duration(config.Upstream.KeepAlive) * time.Second,
-			ResponseHeaderTimeout: time.Duration(config.Upstream.Timeout) * time.Second,
+			MaxIdleConns:          newConfig.Upstream.DoH.Idle.MaxConnection,
+			MaxIdleConnsPerHost:   newConfig.Upstream.DoH.Idle.MaxConnectionPerHost,
+			IdleConnTimeout:       time.Duration(newConfig.Upstream.KeepAlive) * time.Second,
+			ResponseHeaderTimeout: time.Duration(newConfig.Upstream.Timeout) * time.Second,
 			ForceAttemptHTTP2:     true,
 			DisableKeepAlives:     false,
 			DisableCompression:    false,
 			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: config.Upstream.SkipTLSVerify,
+				InsecureSkipVerify: newConfig.Upstream.SkipTLSVerify,
 			},
 		},
 	}
 
-	for _, remoteAddr := range config.Upstream.Addresses {
+	var newDnsAddresses, newDOHURLs []string
+	for _, remoteAddr := range newConfig.Upstream.Addresses {
 		remoteAddr = strings.TrimSpace(remoteAddr)
 		if remoteAddr == "" {
 			continue
 		}
 
 		// Populate DNS Upstream Targets
-		dnsAddreses = append(dnsAddreses, remoteAddr)
+		newDnsAddresses = append(newDnsAddresses, remoteAddr)
 
 		// Populate DNS-Over-HTTPS URLs
-		url := fmt.Sprintf("https://%s%s", remoteAddr, config.Upstream.DoH.QueryPath)
-		dohURL = append(dohURL, url)
+		url := fmt.Sprintf("https://%s%s", remoteAddr, newConfig.Upstream.DoH.QueryPath)
+		newDOHURLs = append(newDOHURLs, url)
 	}
 
-	if len(dnsAddreses) == 0 {
+	if len(newDnsAddresses) == 0 {
 		log.Fatal("Error No Valid Remote Addresses Provided")
 	}
 
-	udpPool = NewUDPPool(config.Upstream.PoolSize, dnsAddreses)
-	log.Printf("Initialized: Connection UDP Pool (Size: %d)", config.Upstream.PoolSize)
+	newUDPPool := NewUDPPool(newConfig.Upstream.PoolSize, newDnsAddresses)
+	log.Printf("Initialized: Connection UDP Pool (Size: %d)", newConfig.Upstream.PoolSize)
 
-	if config.Upstream.Mode == "tcp" || config.Upstream.Mode == "dot" {
-		hostSNI := config.Upstream.Domain
-		if hostSNI == "" && len(dnsAddreses) > 0 {
-			hostSNI = dnsAddreses[0]
+	var newTCPPool *TCPPool
+	if newConfig.Upstream.Mode == "tcp" || newConfig.Upstream.Mode == "dot" {
+		hostSNI := newConfig.Upstream.Domain
+		if hostSNI == "" && len(newDnsAddresses) > 0 {
+			hostSNI = newDnsAddresses[0]
 		}
 
-		tcpPool = NewTCPPool(config.Upstream.PoolSize, dnsAddreses, hostSNI, config.Upstream.Mode)
-		log.Printf("Initialized: Connection TCP Pool (Size: %d)", config.Upstream.PoolSize)
+		newTCPPool = NewTCPPool(newConfig.Upstream.PoolSize, newDnsAddresses, hostSNI, newConfig.Upstream.Mode)
+		log.Printf("Initialized: Connection TCP Pool (Size: %d)", newConfig.Upstream.PoolSize)
 	}
 
-	dnsLocal = NewLocalResolver(config.Local)
-	if config.Local.Enable {
-		log.Printf("Initialized: Local Resolver (Hosts File: %v, Static: %d)", config.Local.UseHostsFile, len(config.Local.StaticRecords))
+	newDNSLocal := NewLocalResolver(newConfig.Local, newConfig.Cache.MinTTL)
+	if newConfig.Local.Enable {
+		log.Printf("Initialized: Local Resolver (Hosts File: %v, Static: %d)", newConfig.Local.UseHostsFile, len(newConfig.Local.StaticRecords))
 	}
 
-	dnsForwarder = NewForwarderResolver(config.Forwarder)
-	if config.Forwarder.Enable {
-		log.Printf("Initialized: Forwarder Resolver (Rules: %d)", len(config.Forwarder.Rules))
+	newDNSForwarder := NewForwarderResolver(newConfig.Forwarder)
+	if newConfig.Forwarder.Enable {
+		log.Printf("Initialized: Forwarder Resolver (Rules: %d)", len(newConfig.Forwarder.Rules))
 	}
 
-	dnsCache = NewCache(config.Cache.Size, config.Cache.Shards, config.Cache.MinTTL, config.Cache.NegTTL)
-	if config.Cache.Size > 0 {
-		log.Printf("Initialized: DNS Cache (Size: %d, Shards: %d, Minimum TTL: %ds, Negative TTL: %ds)", config.Cache.Size, config.Cache.Shards, config.Cache.MinTTL, config.Cache.NegTTL)
+	newDNSCache := NewCache(newConfig.Cache.Size, newConfig.Cache.Shards, newConfig.Cache.MinTTL, newConfig.Cache.NegTTL)
+	if newConfig.Cache.Size > 0 {
+		log.Printf("Initialized: DNS Cache (Size: %d, Shards: %d, Minimum TTL: %ds, Negative TTL: %ds)", newConfig.Cache.Size, newConfig.Cache.Shards, newConfig.Cache.MinTTL, newConfig.Cache.NegTTL)
+	}
+
+	configLock.Lock()
+	defer configLock.Unlock()
+
+	if dnsCache != nil {
+		dnsCache.Stop()
+	}
+
+	config = newConfig
+
+	bufPool = newBufPool
+	udpClient = newUDPClient
+	dohClient = newDOHClient
+
+	dnsAddreses = newDnsAddresses
+	dohURLs = newDOHURLs
+
+	udpPool = newUDPPool
+	tcpPool = newTCPPool
+
+	dnsLocal = newDNSLocal
+	dnsForwarder = newDNSForwarder
+	dnsCache = newDNSCache
+
+	return nil
+}
+
+func main() {
+	if err := parseConfig(); err != nil {
+		log.Fatalf("Error Initial Configuration Load: %v", err)
 	}
 
 	dns.HandleFunc(".", handleRequest)
@@ -158,8 +192,21 @@ func main() {
 	}
 
 	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
-	<-sig
+	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+
+	for {
+		s := <-sig
+		if s == syscall.SIGHUP {
+			log.Println("Reloading Configuration...")
+
+			if err := parseConfig(); err != nil {
+				log.Printf("Error Reloading Configuration: %v", err)
+			}
+		} else {
+			// Exit Loop and Continue to Shutdown
+			break
+		}
+	}
 
 	fmt.Println("")
 	log.Println("Shutdown Complete")
@@ -196,6 +243,9 @@ func startListener(netType string, addr string) {
 }
 
 func handleRequest(w dns.ResponseWriter, r *dns.Msg) {
+	configLock.RLock()
+	defer configLock.RUnlock()
+
 	var err error
 	var resp *dns.Msg
 
@@ -227,7 +277,7 @@ func handleRequest(w dns.ResponseWriter, r *dns.Msg) {
 	if !forwardFound {
 		switch config.Upstream.Mode {
 		case "doh":
-			resp, err = forwardDoH(r, dohURL)
+			resp, err = forwardDoH(r, dohURLs)
 		case "tcp", "dot":
 			resp, err = forwardTCP(r)
 		case "udp":

@@ -27,6 +27,7 @@ type DNSCache struct {
 	defaultTTL time.Duration
 	minTTL     time.Duration
 	negTTL     time.Duration
+	stop       chan struct{}
 }
 
 func NewCache(size int, shards int, minTTL int, negTTL int) *DNSCache {
@@ -44,6 +45,7 @@ func NewCache(size int, shards int, minTTL int, negTTL int) *DNSCache {
 		defaultTTL: 60 * time.Second,
 		minTTL:     time.Duration(minTTL) * time.Second,
 		negTTL:     time.Duration(negTTL) * time.Second,
+		stop:       make(chan struct{}),
 	}
 
 	// Count Cache Capacity Per-Shard
@@ -155,22 +157,35 @@ func (c *DNSCache) cleanupRoutine() {
 	ticker := time.NewTicker(1 * time.Minute)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		now := time.Now()
+	for {
+		select {
+		case <-ticker.C:
+			now := time.Now()
 
-		// Loop Through Shard
-		for i := 0; i < int(c.shardCount); i++ {
-			shard := c.shards[i]
+			// Loop Through Shard
+			for i := 0; i < int(c.shardCount); i++ {
+				shard := c.shards[i]
 
-			shard.mu.Lock()
-			// Loop Through Capacity in Shard
-			for k, v := range shard.store {
-				if now.After(v.Expires) {
-					// Delete Expired Cache
-					delete(shard.store, k)
+				// Loop Through Capacity in Shard
+				shard.mu.Lock()
+				for k, v := range shard.store {
+					if now.After(v.Expires) {
+						// Delete Expired Cache
+						delete(shard.store, k)
+					}
 				}
+				shard.mu.Unlock()
 			}
-			shard.mu.Unlock()
+
+		case <-c.stop:
+			// Stop Routine when Stop Signal Recieved
+			return
 		}
+	}
+}
+
+func (c *DNSCache) Stop() {
+	if c.enabled {
+		close(c.stop)
 	}
 }

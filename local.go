@@ -18,11 +18,11 @@ type LocalResolver struct {
 	mu              sync.RWMutex
 }
 
-func NewLocalResolver(cfg LocalConfig) *LocalResolver {
+func NewLocalResolver(cfg LocalConfig, minTTL int) *LocalResolver {
 	lr := &LocalResolver{
 		records:         make(map[string][]net.IP),
 		recordWildcards: make(map[string][]net.IP),
-		minTTL:          uint32(config.Cache.MinTTL),
+		minTTL:          uint32(minTTL),
 	}
 
 	if !cfg.Enable {
