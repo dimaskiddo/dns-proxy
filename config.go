@@ -8,12 +8,13 @@ import (
 )
 
 type Config struct {
-	Server    ServerConfig    `yaml:"server"`
-	Upstream  UpstreamConfig  `yaml:"upstream"`
-	Local     LocalConfig     `yaml:"local"`
-	Forwarder ForwarderConfig `yaml:"forwarder"`
-	Cache     CacheConfig     `yaml:"cache"`
-	EDNS      EDNSConfig      `yaml:"edns"`
+	Server        ServerConfig        `yaml:"server"`
+	Upstream      UpstreamConfig      `yaml:"upstream"`
+	Cache         CacheConfig         `yaml:"cache"`
+	BogusNXDomain BogusNXDomainConfig `yaml:"bogus-nxdomain"`
+	EDNS          EDNSConfig          `yaml:"edns"`
+	Local         LocalConfig         `yaml:"local"`
+	Forwarder     ForwarderConfig     `yaml:"forwarder"`
 }
 
 type ServerConfig struct {
@@ -43,12 +44,30 @@ type IdleConfig struct {
 	MaxConnection        int `yaml:"max_conn"`
 	MaxConnectionPerHost int `yaml:"max_per_host"`
 }
+type CacheConfig struct {
+	Size   int `yaml:"size"`
+	Shards int `yaml:"shards"`
+	MinTTL int `yaml:"min_ttl"`
+	NegTTL int `yaml:"neg_ttl"`
+}
+
+type BogusNXDomainConfig struct {
+	Enable bool     `yaml:"enable"`
+	IPs    []string `yaml:"ips"`
+}
+
+type EDNSConfig struct {
+	Enable   bool `yaml:"enable"`
+	IPv4Mask int  `yaml:"ipv4_mask"`
+	IPv6Mask int  `yaml:"ipv6_mask"`
+}
 
 type LocalConfig struct {
-	Enable        bool           `yaml:"enable"`
-	UseHostsFile  bool           `yaml:"use_hosts_file"`
-	IncludeFiles  []string       `yaml:"include_files"`
-	StaticRecords []StaticRecord `yaml:"static_records"`
+	Enable          bool           `yaml:"enable"`
+	UseHostsFile    bool           `yaml:"use_hosts_file"`
+	CustomHostsFile string         `yaml:"custom_hosts_file"`
+	IncludeFiles    []string       `yaml:"include_files"`
+	StaticRecords   []StaticRecord `yaml:"static_records"`
 }
 
 type StaticRecord struct {
@@ -65,19 +84,6 @@ type ForwarderConfig struct {
 type ForwarderRule struct {
 	Domain    string   `yaml:"domain"`
 	Upstreams []string `yaml:"upstreams"`
-}
-
-type CacheConfig struct {
-	Size   int `yaml:"size"`
-	Shards int `yaml:"shards"`
-	MinTTL int `yaml:"min_ttl"`
-	NegTTL int `yaml:"neg_ttl"`
-}
-
-type EDNSConfig struct {
-	Enable   bool `yaml:"enable"`
-	IPv4Mask int  `yaml:"ipv4_mask"`
-	IPv6Mask int  `yaml:"ipv6_mask"`
 }
 
 func LoadConfig(filename string) (*Config, error) {
@@ -104,19 +110,21 @@ func LoadConfig(filename string) (*Config, error) {
 	config.Upstream.DoH.Idle.MaxConnection = 100
 	config.Upstream.DoH.Idle.MaxConnectionPerHost = 20
 
-	config.Local.Enable = false
-	config.Local.UseHostsFile = false
-
-	config.Forwarder.Enable = false
-
 	config.Cache.Size = 10000
 	config.Cache.Shards = 256
 	config.Cache.MinTTL = 60
 	config.Cache.NegTTL = 1
 
+	config.BogusNXDomain.Enable = false
+
 	config.EDNS.Enable = false
 	config.EDNS.IPv4Mask = 24
 	config.EDNS.IPv6Mask = 56
+
+	config.Local.Enable = false
+	config.Local.UseHostsFile = false
+
+	config.Forwarder.Enable = false
 
 	err = yaml.Unmarshal(data, config)
 	if err != nil {

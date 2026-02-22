@@ -42,8 +42,9 @@ var (
 )
 
 var (
-	dnsAddreses []string
-	dohURLs     []string
+	dnsAddreses    []string
+	dohURLs        []string
+	bogusNXDomains []net.IP
 )
 
 func init() {
@@ -54,11 +55,8 @@ func init() {
 	flag.Parse()
 
 	if showVersion {
-		fmt.Println("DNS-Proxy")
-		fmt.Println("Created by Dimas Restu H <drh.dimasrestu@gmail.com>")
-		fmt.Println("---------------------------------------------------")
-		fmt.Println("Version : " + version)
-		fmt.Println("Commit  : " + commit)
+		fmt.Println("DNS-Proxy v" + version + "~" + commit)
+		fmt.Println("By Dimas Restu H <drh.dimasrestu@gmail.com>")
 		os.Exit(0)
 	}
 }
@@ -154,6 +152,28 @@ func parseConfig() error {
 		log.Printf("Initialized: Connection TCP Pool (Size: %d)", newConfig.Upstream.PoolSize)
 	}
 
+	newDNSCache := NewCache(newConfig.Cache.Size, newConfig.Cache.Shards, newConfig.Cache.MinTTL, newConfig.Cache.NegTTL)
+	if newConfig.Cache.Size > 0 {
+		log.Printf("Initialized: DNS Cache (Size: %d, Shards: %d, Minimum TTL: %ds, Negative TTL: %ds)", newConfig.Cache.Size, newConfig.Cache.Shards, newConfig.Cache.MinTTL, newConfig.Cache.NegTTL)
+	}
+
+	var newBogusNXDomains []net.IP
+	if newConfig.BogusNXDomain.Enable {
+		for _, ipStr := range newConfig.BogusNXDomain.IPs {
+			ipStr = strings.TrimSpace(ipStr)
+			if ip := net.ParseIP(ipStr); ip != nil {
+				newBogusNXDomains = append(newBogusNXDomains, ip)
+			}
+		}
+
+		log.Printf("Initialized: Bogus NXDomain Filtering (Total IPs: %d)", len(newBogusNXDomains))
+	}
+
+	newDNSEDNS := NewEDNSHandler(newConfig.EDNS)
+	if newConfig.EDNS.Enable {
+		log.Printf("Initialized: EDNS0 Client Subnet (IPv4 Mask: /%d, IPv6 Mask: /%d)", newConfig.EDNS.IPv4Mask, newConfig.EDNS.IPv6Mask)
+	}
+
 	newDNSLocal := NewLocalResolver(newConfig.Local, newConfig.Cache.MinTTL)
 	if newConfig.Local.Enable {
 		log.Printf("Initialized: Local Resolver (Hosts File: %v, Static: %d)", newConfig.Local.UseHostsFile, len(newConfig.Local.StaticRecords))
@@ -162,16 +182,6 @@ func parseConfig() error {
 	newDNSForwarder := NewForwarderResolver(newConfig.Forwarder)
 	if newConfig.Forwarder.Enable {
 		log.Printf("Initialized: Forwarder Resolver (Rules: %d)", len(newConfig.Forwarder.Rules))
-	}
-
-	newDNSCache := NewCache(newConfig.Cache.Size, newConfig.Cache.Shards, newConfig.Cache.MinTTL, newConfig.Cache.NegTTL)
-	if newConfig.Cache.Size > 0 {
-		log.Printf("Initialized: DNS Cache (Size: %d, Shards: %d, Minimum TTL: %ds, Negative TTL: %ds)", newConfig.Cache.Size, newConfig.Cache.Shards, newConfig.Cache.MinTTL, newConfig.Cache.NegTTL)
-	}
-
-	newDNSEDNS := NewEDNSHandler(newConfig.EDNS)
-	if newConfig.EDNS.Enable {
-		log.Printf("Initialized: EDNS0 Client Subnet (IPv4 Mask: /%d, IPv6 Mask: /%d)", newConfig.EDNS.IPv4Mask, newConfig.EDNS.IPv6Mask)
 	}
 
 	configLock.Lock()
@@ -189,14 +199,15 @@ func parseConfig() error {
 
 	dnsAddreses = newDnsAddresses
 	dohURLs = newDOHURLs
+	bogusNXDomains = newBogusNXDomains
 
 	udpPool = newUDPPool
 	tcpPool = newTCPPool
 
-	dnsLocal = newDNSLocal
-	dnsForwarder = newDNSForwarder
 	dnsCache = newDNSCache
 	dnsEDNS = newDNSEDNS
+	dnsLocal = newDNSLocal
+	dnsForwarder = newDNSForwarder
 
 	return nil
 }
@@ -325,6 +336,10 @@ func handleRequest(w dns.ResponseWriter, r *dns.Msg) {
 	}
 
 	if resp != nil {
+		if config.BogusNXDomain.Enable {
+			checkBogusNXDomain(resp)
+		}
+
 		dnsCache.Set(resp)
 	}
 
