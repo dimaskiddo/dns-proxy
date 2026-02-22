@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"time"
 
 	"github.com/miekg/dns"
@@ -45,8 +46,7 @@ func forwardUDP(m *dns.Msg, overrides []string) (*dns.Msg, error) {
 		conn.SetWriteDeadline(ctxTimeout)
 		conn.SetReadDeadline(ctxTimeout)
 
-		resp, _, err := udpClient.ExchangeWithConn(m, conn)
-		if err != nil {
+		if err := conn.WriteMsg(m); err != nil {
 			conn.Close()
 			udpPool.Return(nil)
 
@@ -56,7 +56,20 @@ func forwardUDP(m *dns.Msg, overrides []string) (*dns.Msg, error) {
 
 			lastErr = err
 			attempts++
+			continue
+		}
 
+		resp, err := conn.ReadMsg()
+		if err != nil {
+			conn.Close()
+			udpPool.Return(nil)
+
+			if reused && (err == io.EOF || isNetworkError(err)) {
+				continue
+			}
+
+			lastErr = err
+			attempts++
 			continue
 		}
 

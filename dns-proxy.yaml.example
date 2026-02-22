@@ -40,7 +40,7 @@ edns:
   ipv6_mask: 56
 
 local:
-  enable: true
+  enable: false
   use_hosts_file: false
   custom_hosts_file: /etc/hosts
   ## Can use include_files for more managed configuration

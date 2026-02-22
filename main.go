@@ -33,7 +33,6 @@ var (
 	tcpPool      *TCPPool
 	udpPool      *UDPPool
 	bufPool      *sync.Pool
-	udpClient    *dns.Client
 	dohClient    *http.Client
 	dnsLocal     *LocalResolver
 	dnsForwarder *ForwarderResolver
@@ -78,12 +77,6 @@ func parseConfig() error {
 			b := make([]byte, newConfig.Upstream.BufferSize+1024)
 			return &b
 		},
-	}
-
-	newUDPClient := &dns.Client{
-		Net:            "udp",
-		SingleInflight: true,
-		UDPSize:        uint16(newConfig.Upstream.BufferSize),
 	}
 
 	newDOHDialer := &net.Dialer{
@@ -194,7 +187,6 @@ func parseConfig() error {
 	config = newConfig
 
 	bufPool = newBufPool
-	udpClient = newUDPClient
 	dohClient = newDOHClient
 
 	dnsAddreses = newDnsAddresses
