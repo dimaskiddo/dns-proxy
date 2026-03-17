@@ -33,10 +33,6 @@ func (p *TCPPool) NewConn() (*dns.Conn, error) {
 	for _, addr := range p.addresses {
 		conn, err := p.Dial(addr)
 		if err == nil {
-			if tcpConn, ok := conn.Conn.(*net.TCPConn); ok {
-				setTCPOptions(tcpConn)
-			}
-
 			return conn, nil
 		}
 
@@ -65,7 +61,16 @@ func (p *TCPPool) Dial(addr string) (*dns.Conn, error) {
 		Control:   setSocketOptions,
 	}
 
-	return c.Dial(addr)
+	conn, err := c.Dial(addr)
+	if err == nil {
+		if tcpConn, ok := conn.Conn.(*net.TCPConn); ok {
+			setTCPOptions(tcpConn)
+		}
+
+		return conn, nil
+	}
+
+	return conn, err
 }
 
 func (p *TCPPool) Get() (*dns.Conn, bool, error) {
