@@ -98,13 +98,13 @@ func LoadConfig(filename string) (*Config, error) {
 	config.Server.Listen = []string{"0.0.0.0:5353"}
 	config.Server.Compress = true
 
-	config.Upstream.Mode = "udp"
 	config.Upstream.Timeout = 5
 	config.Upstream.KeepAlive = 60
 	config.Upstream.BufferSize = 4096
 	config.Upstream.PoolSize = 100
 	config.Upstream.MaxAttempts = 3
 	config.Upstream.SkipTLSVerify = true
+	config.Upstream.Mode = "udp"
 
 	config.Upstream.DoH.QueryPath = "/dns-query"
 	config.Upstream.DoH.Idle.MaxConnection = 100

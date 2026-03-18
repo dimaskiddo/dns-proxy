@@ -4,15 +4,15 @@ server:
   compress: true
 
 upstream:
-  ## Available Values for Mode
-  ## udp, tcp, dot, doh
-  mode: dot
   timeout: 5
   keep_alive: 60
   buffer_size: 4096
   pool_size: 1024
   max_attempts: 3
   skip_tls_verify: true
+  ## Available Values for Mode
+  ## udp, tcp, dot, doh
+  mode: dot
   domain: family.cloudflare-dns.com
   addresses:
     - 1.1.1.3:853

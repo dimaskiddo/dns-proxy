@@ -36,7 +36,6 @@ func forwardDoH(m *dns.Msg, urls []string) (*dns.Msg, error) {
 		}
 
 		bufPtr := bufPool.Get().(*[]byte)
-		defer bufPool.Put(bufPtr)
 
 		buf := (*bufPtr)[:0]
 		buffer := bytes.NewBuffer(buf)
@@ -45,6 +44,7 @@ func forwardDoH(m *dns.Msg, urls []string) (*dns.Msg, error) {
 		resp.Body.Close()
 
 		if err != nil {
+			// Return Buffer to Pool when Error Occurred
 			bufPool.Put(bufPtr)
 
 			errLast = err
@@ -65,5 +65,5 @@ func forwardDoH(m *dns.Msg, urls []string) (*dns.Msg, error) {
 		return msg, nil
 	}
 
-	return nil, fmt.Errorf("Error Failed to Dial DNS Upstreams: %v", errLast)
+	return nil, fmt.Errorf("[DOH] Error Failed to Dial DNS Upstreams: %v", errLast)
 }

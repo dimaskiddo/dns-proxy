@@ -41,7 +41,7 @@ func forwardTCP(m *dns.Msg) (*dns.Msg, error) {
 				continue
 			}
 
-			lastErr = fmt.Errorf("Error Failed to Write: %w", err)
+			lastErr = fmt.Errorf("[TCP] Error Failed to Write: %w", err)
 			attempts++
 
 			continue
@@ -56,7 +56,7 @@ func forwardTCP(m *dns.Msg) (*dns.Msg, error) {
 				continue
 			}
 
-			lastErr = fmt.Errorf("Error Failed to Read: %w", err)
+			lastErr = fmt.Errorf("[TCP] Error Failed to Read: %w", err)
 			attempts++
 
 			continue
@@ -70,5 +70,5 @@ func forwardTCP(m *dns.Msg) (*dns.Msg, error) {
 		return resp, nil
 	}
 
-	return nil, fmt.Errorf("Error DNS Upstream Failed After %d Attempts: %v", attempts, lastErr)
+	return nil, fmt.Errorf("[TCP] Error DNS Upstream Failed After %d Attempts: %v", attempts, lastErr)
 }

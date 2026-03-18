@@ -24,6 +24,12 @@ var (
 )
 
 var (
+	dnsAddreses    []string
+	dohURLs        []string
+	bogusNXDomains []net.IP
+)
+
+var (
 	config     *Config
 	configLock sync.RWMutex
 	configFile string
@@ -34,16 +40,10 @@ var (
 	udpPool      *UDPPool
 	bufPool      *sync.Pool
 	dohClient    *http.Client
+	dnsEDNS      *EDNSHandler
+	dnsCache     *DNSCache
 	dnsLocal     *LocalResolver
 	dnsForwarder *ForwarderResolver
-	dnsCache     *DNSCache
-	dnsEDNS      *EDNSHandler
-)
-
-var (
-	dnsAddreses    []string
-	dohURLs        []string
-	bogusNXDomains []net.IP
 )
 
 func init() {
@@ -53,11 +53,14 @@ func init() {
 	flag.BoolVar(&showVersion, "version", false, "Show DNS-Proxy version")
 	flag.Parse()
 
+	fmt.Println("DNS-Proxy v" + version + "~" + commit)
+	fmt.Println("By Dimas Restu H <drh.dimasrestu@gmail.com>")
+
 	if showVersion {
-		fmt.Println("DNS-Proxy v" + version + "~" + commit)
-		fmt.Println("By Dimas Restu H <drh.dimasrestu@gmail.com>")
 		os.Exit(0)
 	}
+
+	fmt.Println("-------------------------------------------")
 }
 
 func parseConfig() error {
@@ -145,11 +148,6 @@ func parseConfig() error {
 		log.Printf("Initialized: Connection TCP Pool (Size: %d)", newConfig.Upstream.PoolSize)
 	}
 
-	newDNSCache := NewCache(newConfig.Cache.Size, newConfig.Cache.Shards, newConfig.Cache.MinTTL, newConfig.Cache.NegTTL)
-	if newConfig.Cache.Size > 0 {
-		log.Printf("Initialized: DNS Cache (Size: %d, Shards: %d, Minimum TTL: %ds, Negative TTL: %ds)", newConfig.Cache.Size, newConfig.Cache.Shards, newConfig.Cache.MinTTL, newConfig.Cache.NegTTL)
-	}
-
 	var newBogusNXDomains []net.IP
 	if newConfig.BogusNXDomain.Enable {
 		for _, ipStr := range newConfig.BogusNXDomain.IPs {
@@ -165,6 +163,11 @@ func parseConfig() error {
 	newDNSEDNS := NewEDNSHandler(newConfig.EDNS)
 	if newConfig.EDNS.Enable {
 		log.Printf("Initialized: EDNS0 Client Subnet (IPv4 Mask: /%d, IPv6 Mask: /%d)", newConfig.EDNS.IPv4Mask, newConfig.EDNS.IPv6Mask)
+	}
+
+	newDNSCache := NewCache(newConfig.Cache.Size, newConfig.Cache.Shards, newConfig.Cache.MinTTL, newConfig.Cache.NegTTL)
+	if newConfig.Cache.Size > 0 {
+		log.Printf("Initialized: DNS Cache (Size: %d, Shards: %d, Minimum TTL: %ds, Negative TTL: %ds)", newConfig.Cache.Size, newConfig.Cache.Shards, newConfig.Cache.MinTTL, newConfig.Cache.NegTTL)
 	}
 
 	newDNSLocal := NewLocalResolver(newConfig.Local, newConfig.Cache.MinTTL)
@@ -196,8 +199,8 @@ func parseConfig() error {
 	udpPool = newUDPPool
 	tcpPool = newTCPPool
 
-	dnsCache = newDNSCache
 	dnsEDNS = newDNSEDNS
+	dnsCache = newDNSCache
 	dnsLocal = newDNSLocal
 	dnsForwarder = newDNSForwarder
 
