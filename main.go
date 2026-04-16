@@ -16,6 +16,8 @@ import (
 	"time"
 
 	"github.com/miekg/dns"
+	quic "github.com/quic-go/quic-go"
+	"github.com/quic-go/quic-go/http3"
 )
 
 var (
@@ -88,31 +90,47 @@ func parseConfig() error {
 		Control:   setSocketOptions,
 	}
 
-	newDOHClient := &http.Client{
-		Transport: &http.Transport{
-			DialContext: func(ctx context.Context, network string, addr string) (net.Conn, error) {
-				conn, err := newDOHDialer.DialContext(ctx, network, addr)
-				if err != nil {
-					return nil, err
-				}
+	newDOHTransportH2 := &http.Transport{
+		DialContext: func(ctx context.Context, network string, addr string) (net.Conn, error) {
+			conn, err := newDOHDialer.DialContext(ctx, network, addr)
+			if err != nil {
+				return nil, err
+			}
 
-				if tcpConn, ok := conn.(*net.TCPConn); ok {
-					setTCPOptions(tcpConn)
-				}
+			if tcpConn, ok := conn.(*net.TCPConn); ok {
+				setTCPOptions(tcpConn)
+			}
 
-				return conn, nil
-			},
-			MaxIdleConns:          newConfig.Upstream.DoH.Idle.MaxConnection,
-			MaxIdleConnsPerHost:   newConfig.Upstream.DoH.Idle.MaxConnectionPerHost,
-			IdleConnTimeout:       time.Duration(newConfig.Upstream.KeepAlive) * time.Second,
-			ResponseHeaderTimeout: time.Duration(newConfig.Upstream.Timeout) * time.Second,
-			ForceAttemptHTTP2:     true,
-			DisableKeepAlives:     false,
-			DisableCompression:    false,
-			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: newConfig.Upstream.SkipTLSVerify,
-			},
+			return conn, nil
 		},
+		MaxIdleConns:          newConfig.Upstream.DoH.Idle.MaxConnection,
+		MaxIdleConnsPerHost:   newConfig.Upstream.DoH.Idle.MaxConnectionPerHost,
+		IdleConnTimeout:       time.Duration(newConfig.Upstream.KeepAlive) * time.Second,
+		ResponseHeaderTimeout: time.Duration(newConfig.Upstream.Timeout) * time.Second,
+		ForceAttemptHTTP2:     true,
+		TLSClientConfig: &tls.Config{
+			ServerName:         newConfig.Upstream.Domain,
+			InsecureSkipVerify: newConfig.Upstream.SkipTLSVerify,
+		},
+	}
+
+	newDOHTransportH3 := &http3.RoundTripper{
+		TLSClientConfig: &tls.Config{
+			ServerName:         newConfig.Upstream.Domain,
+			InsecureSkipVerify: newConfig.Upstream.SkipTLSVerify,
+		},
+		QuicConfig: &quic.Config{
+			KeepAlivePeriod: time.Duration(newConfig.Upstream.KeepAlive) * time.Second / 2,
+			MaxIdleTimeout:  time.Duration(newConfig.Upstream.KeepAlive) * time.Second,
+		},
+	}
+
+	newDOHClient := &http.Client{
+		Transport: &hybridRoundTripper{
+			H2Transport: newDOHTransportH2,
+			H3Transport: newDOHTransportH3,
+		},
+		Timeout: time.Duration(newConfig.Upstream.Timeout) * time.Second,
 	}
 
 	var newDnsAddresses, newDOHURLs []string
