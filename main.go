@@ -111,17 +111,19 @@ func parseConfig() error {
 		TLSClientConfig: &tls.Config{
 			ServerName:         newConfig.Upstream.Domain,
 			InsecureSkipVerify: newConfig.Upstream.SkipTLSVerify,
+			ClientSessionCache: tls.NewLRUClientSessionCache(newConfig.Upstream.PoolSize),
 		},
 	}
 
-	newDOHTransportH3 := &http3.RoundTripper{
+	newDOHTransportH3 := &http3.Transport{
 		TLSClientConfig: &tls.Config{
 			ServerName:         newConfig.Upstream.Domain,
 			InsecureSkipVerify: newConfig.Upstream.SkipTLSVerify,
+			ClientSessionCache: tls.NewLRUClientSessionCache(newConfig.Upstream.PoolSize),
 		},
-		QuicConfig: &quic.Config{
-			KeepAlivePeriod: time.Duration(newConfig.Upstream.KeepAlive) * time.Second / 2,
-			MaxIdleTimeout:  time.Duration(newConfig.Upstream.KeepAlive) * time.Second,
+		QUICConfig: &quic.Config{
+			KeepAlivePeriod: time.Duration(newConfig.Upstream.KeepAlive) * time.Second,
+			MaxIdleTimeout:  time.Duration(newConfig.Upstream.Timeout) * time.Second,
 		},
 	}
 
