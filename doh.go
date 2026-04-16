@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"fmt"
 	"net/http"
 	"time"
@@ -15,18 +14,17 @@ func forwardDoH(m *dns.Msg, urls []string) (*dns.Msg, error) {
 	var errLast error
 
 	packed, _ := m.Pack()
-	encoded := base64.RawURLEncoding.EncodeToString(packed)
 
 	for _, url := range urls {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(config.Upstream.Timeout)*time.Second)
 
-		dohURL := fmt.Sprintf("%s?dns=%s", url, encoded)
-		req, err := http.NewRequestWithContext(ctx, "GET", dohURL, nil)
+		req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(packed))
 		if err != nil {
 			cancel()
 			return nil, err
 		}
 
+		req.Header.Set("Content-Type", "application/dns-message")
 		req.Header.Set("Accept", "application/dns-message")
 
 		resp, err := dohClient.Do(req)

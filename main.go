@@ -116,14 +116,15 @@ func parseConfig() error {
 	}
 
 	newDOHTransportH3 := &http3.Transport{
+		EnableDatagrams: true,
+		QUICConfig: &quic.Config{
+			KeepAlivePeriod: time.Duration(newConfig.Upstream.KeepAlive) * time.Second,
+			MaxIdleTimeout:  time.Duration(newConfig.Upstream.Timeout) * time.Second,
+		},
 		TLSClientConfig: &tls.Config{
 			ServerName:         newConfig.Upstream.Domain,
 			InsecureSkipVerify: newConfig.Upstream.SkipTLSVerify,
 			ClientSessionCache: tls.NewLRUClientSessionCache(newConfig.Upstream.PoolSize),
-		},
-		QUICConfig: &quic.Config{
-			KeepAlivePeriod: time.Duration(newConfig.Upstream.KeepAlive) * time.Second,
-			MaxIdleTimeout:  time.Duration(newConfig.Upstream.Timeout) * time.Second,
 		},
 	}
 
