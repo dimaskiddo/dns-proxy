@@ -4,6 +4,8 @@ import (
 	"net"
 	"path/filepath"
 	"time"
+
+	"github.com/miekg/dns"
 )
 
 func nextPowerOfTwo(v int) int {
@@ -60,4 +62,19 @@ func parseIncludeFiles(baseDir string, patterns []string) []string {
 	}
 
 	return files
+}
+
+func filterIPv6Records(rrs []dns.RR) []dns.RR {
+	if len(rrs) == 0 {
+		return rrs
+	}
+
+	var filtered []dns.RR
+	for _, rr := range rrs {
+		if rr.Header().Rrtype != dns.TypeAAAA {
+			filtered = append(filtered, rr)
+		}
+	}
+
+	return filtered
 }

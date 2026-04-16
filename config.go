@@ -29,6 +29,7 @@ type UpstreamConfig struct {
 	BufferSize    int       `yaml:"buffer_size"`
 	PoolSize      int       `yaml:"pool_size"`
 	MaxAttempts   int       `yaml:"max_attempts"`
+	DisableIPv6   bool      `yaml:"disable_ipv6"`
 	SkipTLSVerify bool      `yaml:"skip_tls_verify"`
 	Domain        string    `yaml:"domain"`
 	Addresses     []string  `yaml:"addresses"`
@@ -103,6 +104,7 @@ func LoadConfig(filename string) (*Config, error) {
 	config.Upstream.BufferSize = 4096
 	config.Upstream.PoolSize = 100
 	config.Upstream.MaxAttempts = 3
+	config.Upstream.DisableIPv6 = false
 	config.Upstream.SkipTLSVerify = true
 	config.Upstream.Mode = "udp"
 

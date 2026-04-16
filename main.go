@@ -279,6 +279,16 @@ func handleRequest(w dns.ResponseWriter, r *dns.Msg) {
 	var err error
 	var resp *dns.Msg
 
+	if config.Upstream.DisableIPv6 && len(r.Question) > 0 && r.Question[0].Qtype == dns.TypeAAAA {
+		resp := new(dns.Msg)
+
+		resp.SetReply(r)
+		resp.Compress = config.Server.Compress
+
+		w.WriteMsg(resp)
+		return
+	}
+
 	if localResp := dnsLocal.Resolve(r.Question[0]); localResp != nil {
 		localResp.SetReply(r)
 		localResp.Compress = config.Server.Compress
@@ -333,6 +343,12 @@ func handleRequest(w dns.ResponseWriter, r *dns.Msg) {
 	if resp != nil {
 		if config.BogusNXDomain.Enable {
 			checkBogusNXDomain(resp)
+		}
+
+		if config.Upstream.DisableIPv6 {
+			resp.Ns = filterIPv6Records(resp.Ns)
+			resp.Answer = filterIPv6Records(resp.Answer)
+			resp.Extra = filterIPv6Records(resp.Extra)
 		}
 
 		dnsCache.Set(resp)

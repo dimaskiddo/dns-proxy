@@ -9,6 +9,7 @@ upstream:
   buffer_size: 4096
   pool_size: 1024
   max_attempts: 3
+  disable_ipv6: false
   skip_tls_verify: true
   ## Available Values for Mode
   ## udp, tcp, dot, doh
