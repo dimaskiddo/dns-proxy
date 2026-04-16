@@ -2,11 +2,9 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"encoding/base64"
 	"fmt"
 	"net/http"
-	"time"
 
 	"github.com/miekg/dns"
 )
@@ -18,12 +16,9 @@ func forwardDoH(m *dns.Msg, urls []string) (*dns.Msg, error) {
 	encoded := base64.RawURLEncoding.EncodeToString(packed)
 
 	for _, url := range urls {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(config.Upstream.Timeout)*time.Second)
-
 		dohURL := fmt.Sprintf("%s?dns=%s", url, encoded)
-		req, err := http.NewRequestWithContext(ctx, "GET", dohURL, nil)
+		req, err := http.NewRequest("GET", dohURL, nil)
 		if err != nil {
-			cancel()
 			return nil, err
 		}
 
@@ -32,16 +27,12 @@ func forwardDoH(m *dns.Msg, urls []string) (*dns.Msg, error) {
 		resp, err := dohClient.Do(req)
 		if err != nil {
 			errLast = err
-			cancel()
-
 			continue
 		}
 
 		if resp.StatusCode != 200 {
 			resp.Body.Close()
 			errLast = fmt.Errorf("Error DoH Upstream %s Returned %d", url, resp.StatusCode)
-			cancel()
-
 			continue
 		}
 
@@ -57,8 +48,6 @@ func forwardDoH(m *dns.Msg, urls []string) (*dns.Msg, error) {
 			// Return Buffer to Pool when Error Occurred
 			bufPool.Put(bufPtr)
 			errLast = err
-			cancel()
-
 			continue
 		}
 
@@ -67,7 +56,6 @@ func forwardDoH(m *dns.Msg, urls []string) (*dns.Msg, error) {
 
 		// Return Buffer to Pool
 		bufPool.Put(bufPtr)
-		cancel()
 
 		if err != nil {
 			errLast = err

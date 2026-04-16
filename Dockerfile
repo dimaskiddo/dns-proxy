@@ -10,7 +10,7 @@ WORKDIR /usr/src/app
 COPY . ./
 
 RUN go mod download \
-    && CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT}" -trimpath -a -o main .
+    && CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT}" -trimpath -buildmode=pie -a -o main .
 
 
 # Final Image
