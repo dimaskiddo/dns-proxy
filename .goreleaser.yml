@@ -12,7 +12,6 @@ builds:
     - -X main.commit={{.ShortCommit}}    
   flags:
     - -trimpath
-    - -buildmode=pie
     - -a
   goos:
     - darwin
