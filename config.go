@@ -99,7 +99,7 @@ func LoadConfig(filename string) (*Config, error) {
 	config.Server.Listen = []string{"0.0.0.0:5353"}
 	config.Server.Compress = true
 
-	config.Upstream.Timeout = 5
+	config.Upstream.Timeout = 10
 	config.Upstream.KeepAlive = 60
 	config.Upstream.BufferSize = 4096
 	config.Upstream.PoolSize = 100

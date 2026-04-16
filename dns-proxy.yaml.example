@@ -4,7 +4,7 @@ server:
   compress: true
 
 upstream:
-  timeout: 5
+  timeout: 10
   keep_alive: 60
   buffer_size: 4096
   pool_size: 1024
