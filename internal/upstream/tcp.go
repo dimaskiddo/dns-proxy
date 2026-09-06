@@ -1,6 +1,7 @@
 package upstream
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"time"
@@ -13,6 +14,10 @@ import (
 // ForwardTCP sends m over a pooled TCP (or DoT) connection, retrying up to
 // MaxAttempts times.
 func (c *Client) ForwardTCP(m *dns.Msg) (*dns.Msg, error) {
+	if c.tcpPool == nil {
+		return nil, fmt.Errorf("[TCP] pool not initialized for mode %q", c.cfg.Mode)
+	}
+
 	var conn *dns.Conn
 	var reused bool
 
@@ -25,7 +30,13 @@ func (c *Client) ForwardTCP(m *dns.Msg) (*dns.Msg, error) {
 		maxAttempts = 1
 	}
 
-	for attempts < maxAttempts {
+	// See the matching comment in ForwardUDP: bounds the loop independent of
+	// attempts, since a reused connection's failure doesn't consume one.
+	iterations := 0
+	maxIterations := maxAttempts + c.tcpPool.Cap()
+
+	for attempts < maxAttempts && iterations < maxIterations {
+		iterations++
 		deadline := time.Now().Add(time.Duration(c.cfg.Timeout) * time.Second)
 
 		conn, reused, err = c.tcpPool.Get()
@@ -38,28 +49,33 @@ func (c *Client) ForwardTCP(m *dns.Msg) (*dns.Msg, error) {
 
 		if err := conn.WriteMsg(m); err != nil {
 			conn.Close()
-			c.tcpPool.Return(nil)
+			lastErr = fmt.Errorf("[TCP] failed to write: %w", err)
 
 			if reused {
 				continue
 			}
 
-			lastErr = fmt.Errorf("[TCP] failed to write: %w", err)
 			attempts++
-
 			continue
 		}
 
 		resp, err := conn.ReadMsg()
 		if err != nil {
 			conn.Close()
-			c.tcpPool.Return(nil)
+			lastErr = fmt.Errorf("[TCP] failed to read: %w", err)
 
-			if reused && (err == io.EOF || util.IsNetworkError(err)) {
+			if reused && (errors.Is(err, io.EOF) || util.IsNetworkError(err)) {
 				continue
 			}
 
-			lastErr = fmt.Errorf("[TCP] failed to read: %w", err)
+			attempts++
+			continue
+		}
+
+		if resp.Id != m.Id {
+			// See ForwardUDP's matching check.
+			conn.Close()
+			lastErr = fmt.Errorf("[TCP] id mismatch: got %d, want %d", resp.Id, m.Id)
 			attempts++
 
 			continue

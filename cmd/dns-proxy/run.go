@@ -15,10 +15,9 @@ import (
 	"github.com/dimaskiddo/dns-proxy/internal/server"
 )
 
-// runCmd is a hidden alias for the root command's default action. The pre-refactor
-// binary had no subcommands at all — starting the server is the root command's job
-// (see main.go) — but this stays registered, undocumented, for anything already
-// scripted against the refactored `dns-proxy run --config ...` form.
+// runCmd stays registered, undocumented, for anything already scripted
+// against the interim `dns-proxy run --config ...` form — the root command
+// starts the server directly (see main.go).
 func runCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:    "run",
@@ -37,12 +36,12 @@ func runCmd() *cobra.Command {
 func runServer(configFile string) error {
 	mgr, err := config.NewManager(configFile)
 	if err != nil {
-		log.Fatalf("Error Failed to Load Configuration: %v", err)
+		return fmt.Errorf("failed to load configuration: %w", err)
 	}
 
 	srv := server.New()
 	if err := reload(srv, mgr); err != nil {
-		log.Fatalf("Error Initial Configuration Load: %v", err)
+		return fmt.Errorf("failed initial configuration load: %w", err)
 	}
 
 	dns.HandleFunc(".", srv.HandleRequest)
@@ -82,17 +81,19 @@ func runServer(configFile string) error {
 	return nil
 }
 
-// reload builds a Runtime from mgr's current config and installs it on srv,
-// logging what got (re)initialized.
 func reload(srv *server.Server, mgr *config.Manager) error {
 	cfg := mgr.GetConfig()
 
 	rt, err := server.NewRuntime(cfg)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to build runtime: %w", err)
 	}
 
 	srv.SetRuntime(rt)
+
+	if cfg.Upstream.SkipTLSVerify && (cfg.Upstream.Mode == "dot" || cfg.Upstream.Mode == "doh") {
+		log.Printf("WARNING: upstream.skip_tls_verify is true with mode %q — upstream certificate is NOT validated, the encrypted hop is MITM-able", cfg.Upstream.Mode)
+	}
 
 	log.Printf("Initialized: Connection UDP Pool (Size: %d)", cfg.Upstream.PoolSize)
 	if cfg.Upstream.Mode == "tcp" || cfg.Upstream.Mode == "dot" {

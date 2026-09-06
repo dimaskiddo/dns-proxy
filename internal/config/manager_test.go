@@ -97,3 +97,68 @@ rules:
 		t.Fatalf("included forwarder rule not merged: %+v", cfg.Forwarder.Rules)
 	}
 }
+
+// TestUpstreamModeValidation verifies Reload rejects any upstream.mode
+// outside udp/tcp/dot/doh, and accepts each of the four valid values.
+func TestUpstreamModeValidation(t *testing.T) {
+	write := func(t *testing.T, mode string) string {
+		t.Helper()
+
+		dir := t.TempDir()
+		yamlContent := `
+server:
+  listen:
+    - 127.0.0.1:5353
+upstream:
+  addresses:
+    - 1.1.1.1:53
+  mode: ` + mode + `
+`
+		path := filepath.Join(dir, "config.yaml")
+		if err := os.WriteFile(path, []byte(yamlContent), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		return path
+	}
+
+	for _, mode := range []string{"udp", "tcp", "dot", "doh"} {
+		t.Run("valid_"+mode, func(t *testing.T) {
+			if _, err := NewManager(write(t, mode)); err != nil {
+				t.Fatalf("mode %q: expected no error, got %v", mode, err)
+			}
+		})
+	}
+
+	// Empty mode isn't included: an absent/blank YAML value decodes as "no
+	// key present" to mapstructure, so it leaves setDefaultConfig's "udp"
+	// default in place rather than overwriting it with "".
+	for _, mode := range []string{"UDP", "tls", "quic"} {
+		t.Run("invalid_"+mode, func(t *testing.T) {
+			if _, err := NewManager(write(t, mode)); err == nil {
+				t.Fatalf("mode %q: expected an error, got nil", mode)
+			}
+		})
+	}
+}
+
+// TestMissingUpstreamAddressesFailsReload verifies a config with no
+// upstream.addresses fails at load time instead of binding listeners and
+// only failing later when the upstream client is constructed.
+func TestMissingUpstreamAddressesFailsReload(t *testing.T) {
+	dir := t.TempDir()
+
+	yamlContent := `
+server:
+  listen:
+    - 127.0.0.1:5353
+`
+	path := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(path, []byte(yamlContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := NewManager(path); err == nil {
+		t.Fatal("expected an error for a config with no upstream.addresses, got nil")
+	}
+}

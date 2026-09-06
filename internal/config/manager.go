@@ -53,9 +53,19 @@ func (m *Manager) Reload() error {
 		return fmt.Errorf("no listen addresses configured")
 	}
 
-	if err := mergeIncludeFiles(filepath.Dir(m.file), cfg); err != nil {
-		return err
+	switch cfg.Upstream.Mode {
+	case "udp", "tcp", "dot", "doh":
+	default:
+		// Caught here so a bad config fails at load/reload time instead of
+		// nil-deref'ing the request handler's mode switch on the first query.
+		return fmt.Errorf("unsupported upstream mode %q", cfg.Upstream.Mode)
 	}
+
+	if len(cfg.Upstream.Addresses) == 0 {
+		return fmt.Errorf("no upstream addresses configured")
+	}
+
+	mergeIncludeFiles(filepath.Dir(m.file), cfg)
 
 	m.mu.Lock()
 	m.config = cfg
@@ -75,8 +85,8 @@ func (m *Manager) GetConfig() *Config {
 // mergeIncludeFiles expands cfg.Local.IncludeFiles / cfg.Forwarder.IncludeFiles
 // glob patterns (relative to configDir) and appends their static
 // records/forwarder rules onto cfg. Unreadable or unparsable include files
-// are skipped, matching the original behavior.
-func mergeIncludeFiles(configDir string, cfg *Config) error {
+// are skipped rather than failing the load.
+func mergeIncludeFiles(configDir string, cfg *Config) {
 	for _, file := range util.ParseIncludeFiles(configDir, cfg.Local.IncludeFiles) {
 		data, err := os.ReadFile(file)
 		if err != nil {
@@ -104,6 +114,4 @@ func mergeIncludeFiles(configDir string, cfg *Config) error {
 			}
 		}
 	}
-
-	return nil
 }

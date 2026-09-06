@@ -42,10 +42,11 @@ func NewRuntime(cfg *config.Config) (*Runtime, error) {
 	}, nil
 }
 
-// Stop releases background resources (currently just the cache's cleanup
-// goroutine).
+// Stop releases background resources: the cache's cleanup goroutine and the
+// upstream client's pooled/idle connections.
 func (rt *Runtime) Stop() {
 	rt.Cache.Stop()
+	rt.Upstream.Close()
 }
 
 // Server holds the currently active Runtime and swaps it in on reload,

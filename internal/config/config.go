@@ -81,8 +81,8 @@ type ForwarderRule struct {
 	Upstreams []string `yaml:"upstreams" mapstructure:"upstreams"`
 }
 
-// setDefaultConfig populates cfg with the same defaults LoadConfig used to
-// assign before unmarshalling on top of them.
+// setDefaultConfig populates cfg with defaults, applied before viper
+// unmarshals the config file on top of them.
 func setDefaultConfig(cfg *Config) {
 	cfg.Server.Listen = []string{"0.0.0.0:5353"}
 	cfg.Server.Compress = true
@@ -93,7 +93,9 @@ func setDefaultConfig(cfg *Config) {
 	cfg.Upstream.PoolSize = 100
 	cfg.Upstream.MaxAttempts = 3
 	cfg.Upstream.DisableIPv6 = false
-	cfg.Upstream.SkipTLSVerify = true
+	// Off by default: an on-path attacker can otherwise MITM the "encrypted"
+	// DoT/DoH hop transparently. Set true explicitly to opt back out.
+	cfg.Upstream.SkipTLSVerify = false
 	cfg.Upstream.Mode = "udp"
 
 	cfg.Upstream.DoH.QueryPath = "/dns-query"

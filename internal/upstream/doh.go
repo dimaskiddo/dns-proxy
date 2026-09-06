@@ -15,7 +15,10 @@ import (
 func (c *Client) ForwardDoH(m *dns.Msg) (*dns.Msg, error) {
 	var errLast error
 
-	packed, _ := m.Pack()
+	packed, err := m.Pack()
+	if err != nil {
+		return nil, fmt.Errorf("[DOH] failed to pack query: %w", err)
+	}
 
 	for _, url := range c.DoHURLs {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(c.cfg.Timeout)*time.Second)

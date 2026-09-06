@@ -2,7 +2,9 @@ package cache
 
 import (
 	"container/list"
+	"fmt"
 	"hash/fnv"
+	"net"
 	"sync"
 	"time"
 
@@ -77,8 +79,31 @@ func New(size int, shards int, minTTL int, negTTL int) *DNSCache {
 	return c
 }
 
-func key(q dns.Question) string {
-	return q.Name + string(rune(q.Qtype)) + string(rune(q.Qclass))
+// key derives the cache key from q's canonical name/qtype/qclass, plus m's
+// EDNS0 Client Subnet suffix when present. m may be nil.
+func key(q dns.Question, m *dns.Msg) string {
+	k := dns.CanonicalName(q.Name) + string(rune(q.Qtype)) + string(rune(q.Qclass))
+
+	if m == nil {
+		return k
+	}
+
+	opt := m.IsEdns0()
+	if opt == nil {
+		return k
+	}
+
+	for _, o := range opt.Option {
+		ecs, ok := o.(*dns.EDNS0_SUBNET)
+		if !ok {
+			continue
+		}
+
+		k += fmt.Sprintf("|ecs:%d/%d/%s", ecs.Family, ecs.SourceNetmask, ecs.Address.Mask(net.CIDRMask(int(ecs.SourceNetmask), len(ecs.Address)*8)))
+		break
+	}
+
+	return k
 }
 
 func (c *DNSCache) getShard(key string) *shard {
@@ -94,7 +119,7 @@ func (c *DNSCache) Get(r *dns.Msg) *dns.Msg {
 		return nil
 	}
 
-	k := key(r.Question[0])
+	k := key(r.Question[0], r)
 	s := c.getShard(k)
 
 	s.mu.Lock()
@@ -118,20 +143,21 @@ func (c *DNSCache) Get(r *dns.Msg) *dns.Msg {
 	return item.Msg.Copy()
 }
 
-// Set stores r, deriving TTL from its answer records (or the negative TTL
-// for NXDOMAIN/SERVFAIL).
-func (c *DNSCache) Set(r *dns.Msg) {
-	if !c.enabled || len(r.Question) == 0 {
+// Set stores resp keyed by query (so it can be found by the same key Get
+// derives from the original client query, ECS subnet included), deriving
+// TTL from resp's answer records (or the negative TTL for NXDOMAIN/SERVFAIL).
+func (c *DNSCache) Set(query *dns.Msg, resp *dns.Msg) {
+	if !c.enabled || len(query.Question) == 0 {
 		return
 	}
 
 	ttl := c.defaultTTL
 
-	if r.Rcode == dns.RcodeNameError || r.Rcode == dns.RcodeServerFailure {
+	if resp.Rcode == dns.RcodeNameError || resp.Rcode == dns.RcodeServerFailure {
 		ttl = c.negTTL
 	} else {
 		minFound := uint32(0)
-		for _, rr := range r.Answer {
+		for _, rr := range resp.Answer {
 			if minFound == 0 || rr.Header().Ttl < minFound {
 				minFound = rr.Header().Ttl
 			}
@@ -146,10 +172,10 @@ func (c *DNSCache) Set(r *dns.Msg) {
 		}
 	}
 
-	k := key(r.Question[0])
+	k := key(query.Question[0], query)
 	newItem := &cacheItem{
 		Key:     k,
-		Msg:     r.Copy(),
+		Msg:     resp.Copy(),
 		Expires: time.Now().Add(ttl),
 	}
 

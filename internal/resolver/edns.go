@@ -59,7 +59,6 @@ func (e *EDNSHandler) AddECS(r *dns.Msg, clientAddr string) {
 	if opt != nil {
 		for _, o := range opt.Option {
 			if o.Option() == dns.EDNS0SUBNET {
-				// Option already exists, do not overwrite.
 				return
 			}
 		}
@@ -67,6 +66,10 @@ func (e *EDNSHandler) AddECS(r *dns.Msg, clientAddr string) {
 		opt = new(dns.OPT)
 		opt.Hdr.Name = "."
 		opt.Hdr.Rrtype = dns.TypeOPT
+		// Hdr.Class doubles as the advertised UDP payload size
+		// (OPT.UDPSize reads it directly) — leaving it zero caps every
+		// upstream reply at 512 bytes and forces TC on anything larger.
+		opt.SetUDPSize(dns.DefaultMsgSize)
 
 		r.Extra = append(r.Extra, opt)
 	}

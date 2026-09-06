@@ -43,11 +43,10 @@ func main() {
 	}
 }
 
-// normalizeLegacyFlags rewrites pre-cobra single-dash long flags (-config, -version)
-// to their double-dash form. Production predates the cobra migration and still
-// invokes the binary with stdlib `flag` syntax, which pflag reads as a shorthand
-// cluster instead (e.g. "-config" as -c -o -n -f -i -g) and fails to parse.
-// ponytail: covers only the two flags that ever shipped in the old binary — extend
+// Production predates the cobra migration and still invokes the binary with
+// stdlib `flag` syntax, which pflag reads as a shorthand cluster instead
+// (e.g. "-config" as -c -o -n -f -i -g) and fails to parse.
+// covers only the two flags that ever shipped in the old binary — extend
 // the set here if a new persistent long flag is ever added.
 func normalizeLegacyFlags(args []string) []string {
 	legacy := map[string]bool{"config": true, "version": true}

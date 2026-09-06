@@ -1,6 +1,6 @@
 // Package pool provides a generic channel-based dns.Conn pool. TCP/UDP/DoT
 // each supply their own Dial function; the pooling logic itself (Get/Return)
-// is protocol-agnostic — tcp_pool.go and udp_pool.go used to duplicate it.
+// is protocol-agnostic.
 package pool
 
 import (
@@ -75,5 +75,26 @@ func (p *Pool) Return(c *dns.Conn) {
 	case p.conns <- c:
 	default:
 		c.Close()
+	}
+}
+
+// Cap returns the pool's connection capacity (its configured pool_size).
+func (p *Pool) Cap() int {
+	return cap(p.conns)
+}
+
+// Close drains and closes every pooled connection. Callers already holding
+// checked-out connections are unaffected; this only reclaims what is idle
+// in the pool at the moment of the call.
+func (p *Pool) Close() {
+	for {
+		select {
+		case c := <-p.conns:
+			if c != nil {
+				c.Close()
+			}
+		default:
+			return
+		}
 	}
 }

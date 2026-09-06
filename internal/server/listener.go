@@ -27,7 +27,11 @@ func StartListener(netType string, addr string, bufferSize int) {
 			log.Fatalf("Failed to Listen on '%s': %v", strings.ToUpper(netType), err)
 		}
 
-		srv = &dns.Server{PacketConn: l, Net: netType}
+		// UDPSize defaults to dns.MinMsgSize (512) when left zero, clipping
+		// any larger EDNS query (cookies, ECS, DNSSEC, long names) to a read
+		// that fails to unpack and FORMERRs. Size it from the configured
+		// buffer instead.
+		srv = &dns.Server{PacketConn: l, Net: netType, UDPSize: int(util.ClampUDPSize(bufferSize))}
 
 	case "tcp":
 		l, err := lc.Listen(context.Background(), netType, addr)
@@ -36,6 +40,9 @@ func StartListener(netType string, addr string, bufferSize int) {
 		}
 
 		srv = &dns.Server{Listener: l, Net: netType}
+
+	default:
+		log.Fatalf("Unsupported listener type %q", netType)
 	}
 
 	if err := srv.ActivateAndServe(); err != nil {

@@ -6,11 +6,13 @@ server:
 upstream:
   timeout: 10
   keep_alive: 60
+  ## Also limits the largest DNS query accepted
   buffer_size: 4096
   pool_size: 1024
   max_attempts: 3
   disable_ipv6: false
-  skip_tls_verify: true
+  ## Keep false to verify the upstream's TLS certificate (recommended)
+  skip_tls_verify: false
   ## Available Values for Mode
   ## udp, tcp, dot, doh
   mode: dot
@@ -22,7 +24,7 @@ upstream:
     query_path: /dns-query
     idle:
       max_conn: 100
-      per_host: 20
+      max_per_host: 20
 
 cache:
   size: 10000

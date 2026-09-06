@@ -1,6 +1,7 @@
 package upstream
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"time"
@@ -26,7 +27,14 @@ func (c *Client) ForwardUDP(m *dns.Msg, overrides []string) (*dns.Msg, error) {
 		maxAttempts = 1
 	}
 
-	for attempts < maxAttempts {
+	// A reused pooled connection's failure doesn't consume an attempt — it's
+	// not the upstream's fault. iterations bounds the loop independently so a
+	// pool full of dead connections can't stall one query indefinitely.
+	iterations := 0
+	maxIterations := maxAttempts + c.udpPool.Cap()
+
+	for attempts < maxAttempts && iterations < maxIterations {
+		iterations++
 		deadline := time.Now().Add(time.Duration(c.cfg.Timeout) * time.Second)
 
 		if len(overrides) > 0 {
@@ -52,13 +60,12 @@ func (c *Client) ForwardUDP(m *dns.Msg, overrides []string) (*dns.Msg, error) {
 
 		if err := conn.WriteMsg(m); err != nil {
 			conn.Close()
-			c.udpPool.Return(nil)
+			lastErr = err
 
 			if reused {
 				continue
 			}
 
-			lastErr = err
 			attempts++
 			continue
 		}
@@ -66,13 +73,21 @@ func (c *Client) ForwardUDP(m *dns.Msg, overrides []string) (*dns.Msg, error) {
 		resp, err := conn.ReadMsg()
 		if err != nil {
 			conn.Close()
-			c.udpPool.Return(nil)
+			lastErr = err
 
-			if reused && (err == io.EOF || util.IsNetworkError(err)) {
+			if reused && (errors.Is(err, io.EOF) || util.IsNetworkError(err)) {
 				continue
 			}
 
-			lastErr = err
+			attempts++
+			continue
+		}
+
+		if resp.Id != m.Id {
+			// Stale reply on a reused connection — discard it rather than
+			// risk reading another one off the same conn, and retry.
+			conn.Close()
+			lastErr = fmt.Errorf("id mismatch: got %d, want %d", resp.Id, m.Id)
 			attempts++
 			continue
 		}

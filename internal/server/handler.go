@@ -1,12 +1,25 @@
 package server
 
 import (
+	"fmt"
 	"log"
+	"net"
 
 	"github.com/miekg/dns"
 
 	"github.com/dimaskiddo/dns-proxy/internal/util"
 )
+
+// replyTo prepares resp as the reply to r. dns.Msg.SetReply resets Rcode to
+// NOERROR, which would erase an upstream NXDOMAIN/REFUSED/SERVFAIL — so
+// restore the original Rcode after SetReply runs.
+func replyTo(resp *dns.Msg, r *dns.Msg, compress bool) *dns.Msg {
+	rcode := resp.Rcode
+	resp.SetReply(r)
+	resp.Rcode = rcode
+	resp.Compress = compress
+	return resp
+}
 
 // HandleRequest is the dns.HandleFunc for all queries: it loads the current
 // Runtime atomically (no lock held across upstream I/O — a SIGHUP reload no
@@ -21,11 +34,7 @@ func (s *Server) HandleRequest(w dns.ResponseWriter, r *dns.Msg) {
 
 	if cfg.Upstream.DisableIPv6 && len(r.Question) > 0 && r.Question[0].Qtype == dns.TypeAAAA {
 		empty := new(dns.Msg)
-
-		empty.SetReply(r)
-		empty.Compress = cfg.Server.Compress
-
-		w.WriteMsg(empty)
+		w.WriteMsg(replyTo(empty, r, cfg.Server.Compress))
 		return
 	}
 
@@ -38,23 +47,30 @@ func (s *Server) HandleRequest(w dns.ResponseWriter, r *dns.Msg) {
 	}
 
 	if localResp := rt.Local.Resolve(r.Question[0]); localResp != nil {
-		localResp.SetReply(r)
-		localResp.Compress = cfg.Server.Compress
-
-		w.WriteMsg(localResp)
+		w.WriteMsg(replyTo(localResp, r, cfg.Server.Compress))
 		return
+	}
+
+	// Captured before AddECS, which synthesizes its own OPT for a client that
+	// sent none — reading r.IsEdns0() after that point would see the proxy's
+	// OPT instead of the client's real (or absent) advertisement.
+	clientOPT := r.IsEdns0()
+	clientHadEDNS := clientOPT != nil
+	clientUDPSize := dns.MinMsgSize
+	if clientHadEDNS {
+		clientUDPSize = int(clientOPT.UDPSize())
+	}
+
+	// ECS must be injected before the cache lookup: the cache key folds in
+	// the ECS subnet (see cache.key), so a geo-specific answer for one
+	// client is never served to a client from a different subnet.
+	if rt.EDNS != nil {
+		rt.EDNS.AddECS(r, w.RemoteAddr().String())
 	}
 
 	if cachedResp := rt.Cache.Get(r); cachedResp != nil {
-		cachedResp.SetReply(r)
-		cachedResp.Compress = cfg.Server.Compress
-
-		w.WriteMsg(cachedResp)
+		w.WriteMsg(replyTo(cachedResp, r, cfg.Server.Compress))
 		return
-	}
-
-	if rt.EDNS != nil {
-		rt.EDNS.AddECS(r, w.RemoteAddr().String())
 	}
 
 	forwardFound := false
@@ -73,6 +89,10 @@ func (s *Server) HandleRequest(w dns.ResponseWriter, r *dns.Msg) {
 			resp, err = rt.Upstream.ForwardTCP(r)
 		case "udp":
 			resp, err = rt.Upstream.ForwardUDP(r, nil)
+		default:
+			// Defense in depth — config.Manager.Reload is the primary guard
+			// against an unrecognized mode reaching this switch.
+			err = fmt.Errorf("unsupported upstream mode %q", cfg.Upstream.Mode)
 		}
 	}
 
@@ -87,22 +107,38 @@ func (s *Server) HandleRequest(w dns.ResponseWriter, r *dns.Msg) {
 		return
 	}
 
-	if resp != nil {
-		if cfg.BogusNXDomain.Enable {
-			rt.Bogus.Check(resp)
-		}
+	if resp == nil {
+		failMsg := new(dns.Msg)
+		failMsg.SetRcode(r, dns.RcodeServerFailure)
+		failMsg.Compress = cfg.Server.Compress
 
-		if cfg.Upstream.DisableIPv6 {
-			resp.Ns = util.FilterIPv6Records(resp.Ns)
-			resp.Answer = util.FilterIPv6Records(resp.Answer)
-			resp.Extra = util.FilterIPv6Records(resp.Extra)
-		}
-
-		rt.Cache.Set(resp)
+		w.WriteMsg(failMsg)
+		return
 	}
 
-	resp.SetReply(r)
-	resp.Compress = cfg.Server.Compress
+	if cfg.BogusNXDomain.Enable {
+		rt.Bogus.Check(resp)
+	}
+
+	if cfg.Upstream.DisableIPv6 {
+		resp.Ns = util.FilterIPv6Records(resp.Ns)
+		resp.Answer = util.FilterIPv6Records(resp.Answer)
+		resp.Extra = util.FilterIPv6Records(resp.Extra)
+	}
+
+	rt.Cache.Set(r, resp)
+	replyTo(resp, r, cfg.Server.Compress)
+
+	if !clientHadEDNS {
+		resp.Extra = util.StripOPT(resp.Extra)
+	}
+
+	// Truncate only for datagram clients — an oversized UDP reply is both
+	// IP-fragmented and a usable amplification vector for spoofed-source
+	// queries.
+	if _, isUDP := w.RemoteAddr().(*net.UDPAddr); isUDP {
+		resp.Truncate(clientUDPSize)
+	}
 
 	w.WriteMsg(resp)
 }

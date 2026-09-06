@@ -149,7 +149,7 @@ func (c *Client) dialUDP(addr string) (*dns.Conn, error) {
 		return nil, err
 	}
 
-	conn.UDPSize = uint16(c.cfg.BufferSize)
+	conn.UDPSize = util.ClampUDPSize(c.cfg.BufferSize)
 
 	return conn, nil
 }
@@ -161,7 +161,14 @@ func (c *Client) dialTCP(addr string) (*dns.Conn, error) {
 	if c.cfg.Mode == "dot" {
 		host := c.cfg.Domain
 		if host == "" && len(c.Addresses) > 0 {
-			host = c.Addresses[0]
+			// Addresses entries are host:port ("1.1.1.1:853"); ServerName
+			// must be the bare host or SNI/VerifyHostname silently fail
+			// (net.ParseIP/tls treat the port as part of an invalid name).
+			if h, _, err := net.SplitHostPort(c.Addresses[0]); err == nil {
+				host = h
+			} else {
+				host = c.Addresses[0]
+			}
 		}
 
 		dc.Net = "tcp-tls"
@@ -190,6 +197,20 @@ func (c *Client) dialTCP(addr string) (*dns.Conn, error) {
 	return conn, nil
 }
 
-// Close stops any background resources held by the client (currently none;
-// pools close connections lazily as they're returned/evicted).
-func (c *Client) Close() {}
+// Close releases pooled UDP/TCP/DoT connections and idle DoH HTTP/2/HTTP/3
+// connections.
+func (c *Client) Close() {
+	if c.udpPool != nil {
+		c.udpPool.Close()
+	}
+
+	if c.tcpPool != nil {
+		c.tcpPool.Close()
+	}
+
+	if c.dohClient != nil {
+		if closer, ok := c.dohClient.Transport.(closeIdler); ok {
+			closer.CloseIdleConnections()
+		}
+	}
+}

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"net"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -43,6 +44,9 @@ func NewLocalResolver(cfg config.LocalConfig, minTTL int) *LocalResolver {
 			path = "/etc/hosts"
 			if runtime.GOOS == "windows" {
 				path = "C:\\Windows\\System32\\drivers\\etc\\hosts"
+				if root := os.Getenv("SystemRoot"); root != "" {
+					path = filepath.Join(root, "System32", "drivers", "etc", "hosts")
+				}
 			}
 		} else {
 			path = customFile
@@ -99,7 +103,9 @@ func (lr *LocalResolver) addRecord(domain string, ipStr string) {
 
 func (lr *LocalResolver) addRecordIP(domain string, ip net.IP) {
 	isWildcard := false
-	domain = dns.Fqdn(domain)
+	// RFC 1035 names are case-insensitive; CanonicalName normalizes case here
+	// so lookups in Resolve match regardless of how the record was entered.
+	domain = dns.CanonicalName(domain)
 
 	if strings.HasPrefix(domain, "*.") {
 		domain = domain[2:]
@@ -119,14 +125,15 @@ func (lr *LocalResolver) addRecordIP(domain string, ip net.IP) {
 // Resolve returns a synthesized reply for q if a matching record exists,
 // or nil otherwise.
 func (lr *LocalResolver) Resolve(q dns.Question) *dns.Msg {
+	name := dns.CanonicalName(q.Name)
+
 	lr.mu.RLock()
 
-	ips, found := lr.records[q.Name]
+	ips, found := lr.records[name]
 	if !found {
 		var bestMatchLen = -1
 		for domain, ipsWildcard := range lr.recordWildcards {
-			if strings.HasSuffix(q.Name, "."+domain) || q.Name == domain {
-				// Longer domain match wins.
+			if strings.HasSuffix(name, "."+domain) || name == domain {
 				if len(domain) > bestMatchLen {
 					bestMatchLen = len(domain)
 

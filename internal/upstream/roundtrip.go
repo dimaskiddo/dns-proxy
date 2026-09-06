@@ -2,11 +2,28 @@ package upstream
 
 import "net/http"
 
+// closeIdler is implemented by both *http.Transport and *http3.Transport.
+type closeIdler interface {
+	CloseIdleConnections()
+}
+
 // hybridRoundTripper attempts HTTP/3 first and falls back to HTTP/2 on
 // failure.
 type hybridRoundTripper struct {
 	H2Transport http.RoundTripper
 	H3Transport http.RoundTripper
+}
+
+// CloseIdleConnections closes idle connections on both transports. Called
+// on Runtime.Stop (via Client.Close) so a hot reload doesn't orphan DoH
+// idle HTTP/2 conns and HTTP/3 QUIC sessions.
+func (rt *hybridRoundTripper) CloseIdleConnections() {
+	if t, ok := rt.H2Transport.(closeIdler); ok {
+		t.CloseIdleConnections()
+	}
+	if t, ok := rt.H3Transport.(closeIdler); ok {
+		t.CloseIdleConnections()
+	}
 }
 
 func (rt *hybridRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {

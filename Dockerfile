@@ -1,5 +1,3 @@
-# Builder Image
-# ---------------------------------------------------
 FROM golang:1.25-alpine AS go-builder
 
 ARG VERSION=dev \
@@ -13,8 +11,6 @@ RUN go mod download \
     && CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT}" -trimpath -a -o main ./cmd/dns-proxy
 
 
-# Final Image
-# ---------------------------------------------------
 FROM dimaskiddo/alpine:base-glibc
 LABEL maintainer="Dimas Restu Hidayanto <dimas.restu@student.upi.edu>"
 

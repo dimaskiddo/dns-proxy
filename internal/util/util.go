@@ -84,3 +84,35 @@ func FilterIPv6Records(rrs []dns.RR) []dns.RR {
 
 	return filtered
 }
+
+// StripOPT drops the OPT pseudo-record from rrs, for replying to a client
+// that sent no EDNS0 option of its own (RFC 6891 §6.1.1).
+func StripOPT(rrs []dns.RR) []dns.RR {
+	if len(rrs) == 0 {
+		return rrs
+	}
+
+	var filtered []dns.RR
+	for _, rr := range rrs {
+		if rr.Header().Rrtype != dns.TypeOPT {
+			filtered = append(filtered, rr)
+		}
+	}
+
+	return filtered
+}
+
+// ClampUDPSize bounds size to the wire-format range miekg/dns accepts for a
+// UDP payload size, so a config value outside [MinMsgSize, MaxMsgSize]
+// (including one that would overflow uint16) can't silently cap replies at
+// the 512-byte default.
+func ClampUDPSize(size int) uint16 {
+	if size < dns.MinMsgSize {
+		return dns.MinMsgSize
+	}
+	if size > dns.MaxMsgSize {
+		return dns.MaxMsgSize
+	}
+
+	return uint16(size)
+}

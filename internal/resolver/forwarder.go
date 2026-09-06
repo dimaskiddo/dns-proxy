@@ -27,7 +27,9 @@ func NewForwarderResolver(cfg config.ForwarderConfig) *ForwarderResolver {
 	}
 
 	for _, rule := range cfg.Rules {
-		domain := dns.Fqdn(rule.Domain)
+		// RFC 1035 names are case-insensitive; CanonicalName normalizes case
+		// here so a mixed-case query still matches a rule entered any-case.
+		domain := dns.CanonicalName(rule.Domain)
 		fr.rules[domain] = rule.Upstreams
 	}
 
@@ -37,6 +39,8 @@ func NewForwarderResolver(cfg config.ForwarderConfig) *ForwarderResolver {
 // GetUpstream returns the configured upstream addresses for qName, if any
 // rule matches.
 func (fr *ForwarderResolver) GetUpstream(qName string) ([]string, bool) {
+	qName = dns.CanonicalName(qName)
+
 	fr.mu.RLock()
 	defer fr.mu.RUnlock()
 
