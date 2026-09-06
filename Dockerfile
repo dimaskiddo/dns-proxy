@@ -10,13 +10,13 @@ WORKDIR /usr/src/app
 COPY . ./
 
 RUN go mod download \
-    && CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT}" -trimpath -a -o main .
+    && CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT}" -trimpath -a -o main ./cmd/dns-proxy
 
 
 # Final Image
 # ---------------------------------------------------
 FROM dimaskiddo/alpine:base-glibc
-MAINTAINER Dimas Restu Hidayanto <dimas.restu@student.upi.edu>
+LABEL maintainer="Dimas Restu Hidayanto <dimas.restu@student.upi.edu>"
 
 ARG SERVICE_NAME="dns-proxy"
 

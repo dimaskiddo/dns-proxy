@@ -1,4 +1,4 @@
-package main
+package resolver
 
 import (
 	"bufio"
@@ -9,8 +9,12 @@ import (
 	"sync"
 
 	"github.com/miekg/dns"
+
+	"github.com/dimaskiddo/dns-proxy/internal/config"
 )
 
+// LocalResolver answers queries from a hosts file and/or configured static
+// records, supporting "*.domain" wildcards.
 type LocalResolver struct {
 	records         map[string][]net.IP
 	recordWildcards map[string][]net.IP
@@ -18,7 +22,9 @@ type LocalResolver struct {
 	mu              sync.RWMutex
 }
 
-func NewLocalResolver(cfg LocalConfig, minTTL int) *LocalResolver {
+// NewLocalResolver builds a LocalResolver from cfg. minTTL (seconds) is
+// applied to any records it answers.
+func NewLocalResolver(cfg config.LocalConfig, minTTL int) *LocalResolver {
 	lr := &LocalResolver{
 		records:         make(map[string][]net.IP),
 		recordWildcards: make(map[string][]net.IP),
@@ -110,15 +116,17 @@ func (lr *LocalResolver) addRecordIP(domain string, ip net.IP) {
 	}
 }
 
+// Resolve returns a synthesized reply for q if a matching record exists,
+// or nil otherwise.
 func (lr *LocalResolver) Resolve(q dns.Question) *dns.Msg {
 	lr.mu.RLock()
 
 	ips, found := lr.records[q.Name]
 	if !found {
-		var bestMatchLen int = -1
+		var bestMatchLen = -1
 		for domain, ipsWildcard := range lr.recordWildcards {
 			if strings.HasSuffix(q.Name, "."+domain) || q.Name == domain {
-				// Logic: If this domain is longer than the previous best match, pick this one
+				// Longer domain match wins.
 				if len(domain) > bestMatchLen {
 					bestMatchLen = len(domain)
 

@@ -4,3 +4,4 @@ vendor
 *.yaml
 *.DS_Store
 !*.gitkeep
+TASKS.md

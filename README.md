@@ -3,6 +3,10 @@
 A Simple DNS Proxy like DNSMasq but with Modern DNS Protocol Support.
 This DNS Proxy / Forwarder support DNS Upstream with non UDP/TCP like DNS-Over-TLS (DoT) and DNS-Over-HTTPS (DoH) protocol.
 
+## 📚 Detailed Documentation
+
+For a deep dive into architecture, module map, and request/reload workflows, see the **[DNS-PROXY Architecture Documentation](docs/ARCHITECTURE.md)**.
+
 ## Getting Started
 
 These instructions will get you a copy of the project up and running on your local machine for development and testing purposes.
@@ -70,46 +74,37 @@ ren dns-proxy.yaml.example dns-proxy.yaml
 
 Below is the instructions to make this source code running:
 
-1) Create a Go Workspace directory and export it as the extended GOPATH directory
+1) Clone the codebase
 ```sh
-cd <your_go_workspace_directory>
-export GOPATH=$GOPATH:"`pwd`"
+git clone -b master https://github.com/dimaskiddo/dns-proxy.git
+cd dns-proxy
 ```
 
-2) Under the Go Workspace directory create a source directory
-```sh
-mkdir -p src/github.com/dimaskiddo/dns-proxy
-```
-
-3) Move to the created directory and pull codebase
-```sh
-cd src/github.com/dimaskiddo/dns-proxy
-git clone -b master https://github.com/dimaskiddo/dns-proxy.git .
-```
-
-4) Run following command to pull vendor packages
+2) Run following command to pull vendor packages
 ```sh
 make vendor
 ```
 
-5) Until this step you already can run this code by using this command
+3) Until this step you already can run this code by using this command
 ```sh
 make run
 ```
 
-6) *(Optional)* Use following command to build this code into binary spesific platform
+4) *(Optional)* Use following command to build this code into binary spesific platform
 ```sh
 make build
 ```
 
-7) *(Optional)* To make mass binaries distribution you can use following command
+5) *(Optional)* To make mass binaries distribution you can use following command
 ```sh
 make release
 ```
 
 ### Running The Tests
 
-Currently the test is not ready yet :)
+```sh
+go test ./...
+```
 
 ## Built With
 

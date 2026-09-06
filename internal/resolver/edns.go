@@ -1,23 +1,26 @@
-package main
+package resolver
 
 import (
 	"net"
 
 	"github.com/miekg/dns"
+
+	"github.com/dimaskiddo/dns-proxy/internal/config"
 )
 
+// EDNSHandler adds EDNS0 Client Subnet (ECS) options to outgoing queries.
 type EDNSHandler struct {
 	v4Mask uint8
 	v6Mask uint8
 }
 
-func NewEDNSHandler(config EDNSConfig) *EDNSHandler {
-	if !config.Enable {
+// NewEDNSHandler returns an EDNSHandler for cfg, or nil if EDNS is disabled.
+func NewEDNSHandler(cfg config.EDNSConfig) *EDNSHandler {
+	if !cfg.Enable {
 		return nil
 	}
 
-	// Sanity Check for IPv4 Mask
-	v4 := config.IPv4Mask
+	v4 := cfg.IPv4Mask
 	if v4 < 0 {
 		v4 = 0
 	}
@@ -25,8 +28,7 @@ func NewEDNSHandler(config EDNSConfig) *EDNSHandler {
 		v4 = 32
 	}
 
-	// Sanity Check for IPv6 Mask
-	v6 := config.IPv6Mask
+	v6 := cfg.IPv6Mask
 	if v6 < 0 {
 		v6 = 0
 	}
@@ -40,8 +42,9 @@ func NewEDNSHandler(config EDNSConfig) *EDNSHandler {
 	}
 }
 
+// AddECS attaches an EDNS0 Client Subnet option derived from clientAddr to
+// r, unless one is already present.
 func (e *EDNSHandler) AddECS(r *dns.Msg, clientAddr string) {
-	// Parse Real Client-IP
 	host, _, err := net.SplitHostPort(clientAddr)
 	if err != nil {
 		host = clientAddr
@@ -52,27 +55,22 @@ func (e *EDNSHandler) AddECS(r *dns.Msg, clientAddr string) {
 		return
 	}
 
-	// Check if OPT RR exists
-	// And if ECS option is already present
 	opt := r.IsEdns0()
 	if opt != nil {
 		for _, o := range opt.Option {
 			if o.Option() == dns.EDNS0SUBNET {
-				// Option already exists, do not overwrite
+				// Option already exists, do not overwrite.
 				return
 			}
 		}
 	} else {
-		// Create OPT RR
 		opt = new(dns.OPT)
 		opt.Hdr.Name = "."
 		opt.Hdr.Rrtype = dns.TypeOPT
 
-		// Append OPT RR to Extra
 		r.Extra = append(r.Extra, opt)
 	}
 
-	// Create ECS Option
 	ecs := new(dns.EDNS0_SUBNET)
 
 	ecs.Code = dns.EDNS0SUBNET
@@ -88,6 +86,5 @@ func (e *EDNSHandler) AddECS(r *dns.Msg, clientAddr string) {
 		ecs.SourceNetmask = e.v6Mask
 	}
 
-	// Append Option to OPT RR
 	opt.Option = append(opt.Option, ecs)
 }

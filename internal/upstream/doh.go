@@ -1,4 +1,4 @@
-package main
+package upstream
 
 import (
 	"bytes"
@@ -10,13 +10,15 @@ import (
 	"github.com/miekg/dns"
 )
 
-func forwardDoH(m *dns.Msg, urls []string) (*dns.Msg, error) {
+// ForwardDoH sends m as a DNS-over-HTTPS POST to each URL in turn, returning
+// the first successful response.
+func (c *Client) ForwardDoH(m *dns.Msg) (*dns.Msg, error) {
 	var errLast error
 
 	packed, _ := m.Pack()
 
-	for _, url := range urls {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(config.Upstream.Timeout)*time.Second)
+	for _, url := range c.DoHURLs {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(c.cfg.Timeout)*time.Second)
 
 		req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(packed))
 		if err != nil {
@@ -27,7 +29,7 @@ func forwardDoH(m *dns.Msg, urls []string) (*dns.Msg, error) {
 		req.Header.Set("Content-Type", "application/dns-message")
 		req.Header.Set("Accept", "application/dns-message")
 
-		resp, err := dohClient.Do(req)
+		resp, err := c.dohClient.Do(req)
 		if err != nil {
 			errLast = err
 			cancel()
@@ -37,13 +39,13 @@ func forwardDoH(m *dns.Msg, urls []string) (*dns.Msg, error) {
 
 		if resp.StatusCode != 200 {
 			resp.Body.Close()
-			errLast = fmt.Errorf("Error DoH Upstream %s Returned %d", url, resp.StatusCode)
+			errLast = fmt.Errorf("DoH upstream %s returned %d", url, resp.StatusCode)
 			cancel()
 
 			continue
 		}
 
-		bufPtr := bufPool.Get().(*[]byte)
+		bufPtr := c.bufPool.Get().(*[]byte)
 
 		buf := (*bufPtr)[:0]
 		buffer := bytes.NewBuffer(buf)
@@ -52,8 +54,7 @@ func forwardDoH(m *dns.Msg, urls []string) (*dns.Msg, error) {
 		resp.Body.Close()
 
 		if err != nil {
-			// Return Buffer to Pool when Error Occurred
-			bufPool.Put(bufPtr)
+			c.bufPool.Put(bufPtr)
 			errLast = err
 			cancel()
 
@@ -63,8 +64,7 @@ func forwardDoH(m *dns.Msg, urls []string) (*dns.Msg, error) {
 		msg := new(dns.Msg)
 		err = msg.Unpack(buffer.Bytes())
 
-		// Return Buffer to Pool
-		bufPool.Put(bufPtr)
+		c.bufPool.Put(bufPtr)
 		cancel()
 
 		if err != nil {
@@ -75,5 +75,5 @@ func forwardDoH(m *dns.Msg, urls []string) (*dns.Msg, error) {
 		return msg, nil
 	}
 
-	return nil, fmt.Errorf("[DOH] Error Failed to Dial DNS Upstreams: %v", errLast)
+	return nil, fmt.Errorf("[DOH] failed to dial DNS upstreams: %w", errLast)
 }

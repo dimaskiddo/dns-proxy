@@ -1,4 +1,4 @@
-package main
+package upstream
 
 import (
 	"fmt"
@@ -6,9 +6,14 @@ import (
 	"time"
 
 	"github.com/miekg/dns"
+
+	"github.com/dimaskiddo/dns-proxy/internal/util"
 )
 
-func forwardUDP(m *dns.Msg, overrides []string) (*dns.Msg, error) {
+// ForwardUDP sends m over a pooled UDP connection, retrying up to
+// MaxAttempts times. When overrides is non-empty, each attempt dials
+// (uncached) one of those addresses round-robin instead of using the pool.
+func (c *Client) ForwardUDP(m *dns.Msg, overrides []string) (*dns.Msg, error) {
 	var conn *dns.Conn
 	var reused bool
 
@@ -16,20 +21,19 @@ func forwardUDP(m *dns.Msg, overrides []string) (*dns.Msg, error) {
 	var lastErr error
 
 	attempts := 0
-	maxAttempts := config.Upstream.MaxAttempts
-
+	maxAttempts := c.cfg.MaxAttempts
 	if maxAttempts < 1 {
 		maxAttempts = 1
 	}
 
 	for attempts < maxAttempts {
-		ctxTimeout := time.Now().Add(time.Duration(config.Upstream.Timeout) * time.Second)
+		deadline := time.Now().Add(time.Duration(c.cfg.Timeout) * time.Second)
 
 		if len(overrides) > 0 {
 			addr := overrides[attempts%len(overrides)]
 
 			reused = false
-			conn, err = udpPool.Dial(addr)
+			conn, err = c.udpPool.Dial(addr)
 			if err != nil {
 				lastErr = err
 				attempts++
@@ -37,18 +41,18 @@ func forwardUDP(m *dns.Msg, overrides []string) (*dns.Msg, error) {
 				continue
 			}
 		} else {
-			conn, reused, err = udpPool.Get()
+			conn, reused, err = c.udpPool.Get()
 			if err != nil {
 				return nil, err
 			}
 		}
 
-		conn.SetWriteDeadline(ctxTimeout)
-		conn.SetReadDeadline(ctxTimeout)
+		conn.SetWriteDeadline(deadline)
+		conn.SetReadDeadline(deadline)
 
 		if err := conn.WriteMsg(m); err != nil {
 			conn.Close()
-			udpPool.Return(nil)
+			c.udpPool.Return(nil)
 
 			if reused {
 				continue
@@ -62,9 +66,9 @@ func forwardUDP(m *dns.Msg, overrides []string) (*dns.Msg, error) {
 		resp, err := conn.ReadMsg()
 		if err != nil {
 			conn.Close()
-			udpPool.Return(nil)
+			c.udpPool.Return(nil)
 
-			if reused && (err == io.EOF || isNetworkError(err)) {
+			if reused && (err == io.EOF || util.IsNetworkError(err)) {
 				continue
 			}
 
@@ -79,11 +83,11 @@ func forwardUDP(m *dns.Msg, overrides []string) (*dns.Msg, error) {
 		if len(overrides) > 0 {
 			conn.Close()
 		} else {
-			udpPool.Return(conn)
+			c.udpPool.Return(conn)
 		}
 
 		return resp, nil
 	}
 
-	return nil, fmt.Errorf("[UDP] Error DNS Upstream Failed After %d Attempts: %v", attempts, lastErr)
+	return nil, fmt.Errorf("[UDP] DNS upstream failed after %d attempts: %w", attempts, lastErr)
 }

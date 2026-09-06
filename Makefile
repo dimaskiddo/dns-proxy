@@ -36,7 +36,7 @@ publish:
 
 build:
 	make vendor
-	CGO_ENABLED=$(BUILD_CGO_ENABLED) go build -ldflags="-s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT)" -trimpath -a -o $(SERVICE_NAME) .
+	CGO_ENABLED=$(BUILD_CGO_ENABLED) go build -ldflags="-s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT)" -trimpath -a -o $(SERVICE_NAME) ./cmd/dns-proxy
 	echo "Build '$(SERVICE_NAME)' complete."
 
 docker-build:
@@ -45,7 +45,7 @@ docker-build:
 
 run:
 	make vendor
-	go run *.go
+	go run ./cmd/dns-proxy
 
 clean-dist:
 	rm -rf dist

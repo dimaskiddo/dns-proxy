@@ -1,4 +1,4 @@
-package main
+package cache
 
 import (
 	"container/list"
@@ -7,24 +7,27 @@ import (
 	"time"
 
 	"github.com/miekg/dns"
+
+	"github.com/dimaskiddo/dns-proxy/internal/util"
 )
 
-type CacheItem struct {
+type cacheItem struct {
 	Key     string
 	Msg     *dns.Msg
 	Expires time.Time
 }
 
-type CacheShard struct {
+type shard struct {
 	store    map[string]*list.Element
 	ll       *list.List
 	mu       sync.RWMutex
 	capacity int
 }
 
+// DNSCache is a sharded, TTL-aware LRU cache of DNS responses.
 type DNSCache struct {
 	enabled    bool
-	shards     []*CacheShard
+	shards     []*shard
 	shardCount uint64
 	shardMask  uint64
 	defaultTTL time.Duration
@@ -33,16 +36,19 @@ type DNSCache struct {
 	stop       chan struct{}
 }
 
-func NewCache(size int, shards int, minTTL int, negTTL int) *DNSCache {
+// New creates a DNSCache with the given total size (0 disables caching),
+// shard count, minimum positive TTL, and negative-response TTL (all in
+// seconds except size/shards).
+func New(size int, shards int, minTTL int, negTTL int) *DNSCache {
 	if shards < 1 {
 		shards = 256
 	}
 
-	shardsCount := nextPowerOfTwo(shards)
+	shardsCount := util.NextPowerOfTwo(shards)
 
 	c := &DNSCache{
 		enabled:    size > 0,
-		shards:     make([]*CacheShard, shardsCount),
+		shards:     make([]*shard, shardsCount),
 		shardCount: uint64(shardsCount),
 		shardMask:  uint64(shardsCount - 1),
 		defaultTTL: 60 * time.Second,
@@ -51,15 +57,13 @@ func NewCache(size int, shards int, minTTL int, negTTL int) *DNSCache {
 		stop:       make(chan struct{}),
 	}
 
-	// Count Cache Capacity Per-Shard
 	shardCapacity := size / shardsCount
 	if shardCapacity < 1 {
 		shardCapacity = 1
 	}
 
-	// Initialize Cache Shard with Calculated Capacity
 	for i := 0; i < shardsCount; i++ {
-		c.shards[i] = &CacheShard{
+		c.shards[i] = &shard{
 			store:    make(map[string]*list.Element, shardCapacity),
 			ll:       list.New(),
 			capacity: shardCapacity,
@@ -77,42 +81,45 @@ func key(q dns.Question) string {
 	return q.Name + string(rune(q.Qtype)) + string(rune(q.Qclass))
 }
 
-func (c *DNSCache) getShard(key string) *CacheShard {
+func (c *DNSCache) getShard(key string) *shard {
 	h := fnv.New64a()
 	h.Write([]byte(key))
 
 	return c.shards[h.Sum64()&c.shardMask]
 }
 
+// Get returns a cached response for r, or nil on a miss/expiry.
 func (c *DNSCache) Get(r *dns.Msg) *dns.Msg {
 	if !c.enabled || len(r.Question) == 0 {
 		return nil
 	}
 
 	k := key(r.Question[0])
-	shard := c.getShard(k)
+	s := c.getShard(k)
 
-	shard.mu.Lock()
-	defer shard.mu.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	elem, found := shard.store[k]
+	elem, found := s.store[k]
 	if !found {
 		return nil
 	}
 
-	item := elem.Value.(*CacheItem)
+	item := elem.Value.(*cacheItem)
 	if time.Now().After(item.Expires) {
-		shard.ll.Remove(elem)
-		delete(shard.store, k)
+		s.ll.Remove(elem)
+		delete(s.store, k)
 
 		return nil
 	}
 
-	shard.ll.MoveToFront(elem)
+	s.ll.MoveToFront(elem)
 
 	return item.Msg.Copy()
 }
 
+// Set stores r, deriving TTL from its answer records (or the negative TTL
+// for NXDOMAIN/SERVFAIL).
 func (c *DNSCache) Set(r *dns.Msg) {
 	if !c.enabled || len(r.Question) == 0 {
 		return
@@ -121,10 +128,8 @@ func (c *DNSCache) Set(r *dns.Msg) {
 	ttl := c.defaultTTL
 
 	if r.Rcode == dns.RcodeNameError || r.Rcode == dns.RcodeServerFailure {
-		// Negative Caching
 		ttl = c.negTTL
 	} else {
-		// Positive Caching
 		minFound := uint32(0)
 		for _, rr := range r.Answer {
 			if minFound == 0 || rr.Header().Ttl < minFound {
@@ -142,38 +147,33 @@ func (c *DNSCache) Set(r *dns.Msg) {
 	}
 
 	k := key(r.Question[0])
-	newItem := &CacheItem{
+	newItem := &cacheItem{
 		Key:     k,
 		Msg:     r.Copy(),
 		Expires: time.Now().Add(ttl),
 	}
 
-	shard := c.getShard(k)
+	s := c.getShard(k)
 
-	shard.mu.Lock()
-	defer shard.mu.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	// Check if Cache Item Already Exist
-	// If Exist Update it in Linked List
-	if elem, found := shard.store[k]; found {
+	if elem, found := s.store[k]; found {
 		elem.Value = newItem
-		shard.ll.MoveToFront(elem)
+		s.ll.MoveToFront(elem)
 		return
 	}
 
-	// If Shard Capacity is Reached Then
-	// Remove the Back (Least Recently Used (LRU))
-	if shard.ll.Len() >= shard.capacity {
-		oldest := shard.ll.Back()
+	if s.ll.Len() >= s.capacity {
+		oldest := s.ll.Back()
 		if oldest != nil {
-			shard.ll.Remove(oldest)
-			delete(shard.store, oldest.Value.(*CacheItem).Key)
+			s.ll.Remove(oldest)
+			delete(s.store, oldest.Value.(*cacheItem).Key)
 		}
 	}
 
-	// Add Cache Item in to Linked List
-	elem := shard.ll.PushFront(newItem)
-	shard.store[k] = elem
+	elem := s.ll.PushFront(newItem)
+	s.store[k] = elem
 }
 
 func (c *DNSCache) cleanupRoutine() {
@@ -185,34 +185,32 @@ func (c *DNSCache) cleanupRoutine() {
 		case <-ticker.C:
 			now := time.Now()
 
-			// Loop Through Shards
 			for i := 0; i < int(c.shardCount); i++ {
-				shard := c.shards[i]
+				s := c.shards[i]
 
-				shard.mu.Lock()
+				s.mu.Lock()
 
-				// Loop Through Linked List in Shard
 				var next *list.Element
-				for e := shard.ll.Front(); e != nil; e = next {
+				for e := s.ll.Front(); e != nil; e = next {
 					next = e.Next()
-					item := e.Value.(*CacheItem)
+					item := e.Value.(*cacheItem)
 
 					if now.After(item.Expires) {
-						shard.ll.Remove(e)
-						delete(shard.store, item.Key)
+						s.ll.Remove(e)
+						delete(s.store, item.Key)
 					}
 				}
 
-				shard.mu.Unlock()
+				s.mu.Unlock()
 			}
 
 		case <-c.stop:
-			// Stop Routine when Stop Signal Recieved
 			return
 		}
 	}
 }
 
+// Stop terminates the background cleanup goroutine.
 func (c *DNSCache) Stop() {
 	if c.enabled {
 		close(c.stop)

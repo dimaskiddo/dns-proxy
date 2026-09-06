@@ -1,18 +1,23 @@
-package main
+package resolver
 
 import (
 	"strings"
 	"sync"
 
 	"github.com/miekg/dns"
+
+	"github.com/dimaskiddo/dns-proxy/internal/config"
 )
 
+// ForwarderResolver maps query domains to per-domain upstream address
+// overrides, using longest-suffix-match.
 type ForwarderResolver struct {
 	rules map[string][]string
 	mu    sync.RWMutex
 }
 
-func NewForwarderResolver(cfg ForwarderConfig) *ForwarderResolver {
+// NewForwarderResolver builds a ForwarderResolver from cfg.
+func NewForwarderResolver(cfg config.ForwarderConfig) *ForwarderResolver {
 	fr := &ForwarderResolver{
 		rules: make(map[string][]string),
 	}
@@ -29,6 +34,8 @@ func NewForwarderResolver(cfg ForwarderConfig) *ForwarderResolver {
 	return fr
 }
 
+// GetUpstream returns the configured upstream addresses for qName, if any
+// rule matches.
 func (fr *ForwarderResolver) GetUpstream(qName string) ([]string, bool) {
 	fr.mu.RLock()
 	defer fr.mu.RUnlock()
